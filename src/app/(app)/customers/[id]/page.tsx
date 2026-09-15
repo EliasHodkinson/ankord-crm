@@ -23,12 +23,15 @@ import { TrackVisit } from "@/components/app/track-visit";
 import { FilesPanel } from "@/components/app/files-panel";
 import { ConnectFolder } from "@/components/app/connect-folder";
 import { CheckStructure } from "@/components/app/check-structure";
+import { XeroAccount } from "@/components/app/xero-account";
 import { AccountRegister } from "@/components/app/account-register";
 import { CustomerForm } from "../customer-form";
 import { getCustomer } from "@/lib/data/customers";
 import { listCommunications } from "@/lib/data/communications";
 import { getSettings, listTeam } from "@/lib/data/common";
 import { readFolder } from "@/lib/data/files";
+import { readXeroSnapshot } from "@/lib/data/xero";
+import { readXeroConnection } from "@/lib/xero/auth";
 import { updateCustomer } from "@/lib/actions/customers";
 import { requireUser } from "@/lib/auth/session";
 import { formatDate } from "@/lib/utils";
@@ -56,12 +59,15 @@ export default async function CustomerPage({
   const customer = await getCustomer(id);
   if (!customer) notFound();
 
-  const [entries, team, settings, folder] = await Promise.all([
+  const [entries, team, settings, folder, xero, xeroConn] = await Promise.all([
     listCommunications({ customerId: id }),
     listTeam(),
     getSettings(),
     readFolder(customer.spDriveId, customer.spItemId),
+    readXeroSnapshot(customer.xeroContactId),
+    readXeroConnection().catch(() => null),
   ]);
+  const xeroLive = Boolean(xeroConn);
 
   const address = [
     customer.addressLine1,
@@ -271,6 +277,29 @@ export default async function CustomerPage({
                 accounts={customer.accounts}
                 customerId={customer.id}
                 revalidate={`/customers/${customer.id}`}
+              />
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader
+              title="Xero"
+              meta={
+                customer.xeroContactId
+                  ? "Balances and invoice history, read live from Xero"
+                  : "Not linked to a Xero contact yet"
+              }
+            />
+            <CardBody>
+              <XeroAccount
+                customerId={customer.id}
+                kind={customer.kind}
+                linkedName={xero.contact?.name ?? (customer.xeroContactId ? "Xero contact" : null)}
+                balances={xero.contact?.balances ?? null}
+                invoices={xero.invoices}
+                error={xero.error}
+                needsReconnect={xero.needsReconnect}
+                connected={xeroLive}
               />
             </CardBody>
           </Card>
