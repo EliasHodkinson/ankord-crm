@@ -24,6 +24,8 @@ const librarySchema = z.object({
     emptyToNull,
     z.string().trim().nullable(),
   ),
+  // Blank switches lead folders off entirely.
+  spLeadFolder: z.preprocess(emptyToNull, z.string().trim().nullable()),
   spAutoProvision: z.preprocess(
     (v) => v === "on" || v === "true" || v === true,
     z.boolean(),

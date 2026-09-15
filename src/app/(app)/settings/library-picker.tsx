@@ -201,6 +201,19 @@ export function LibraryPicker({
         </Field>
       </div>
 
+      <Field
+        label="Lead folder"
+        htmlFor={`${uid}-leadroot`}
+        hint="Where prospect folders go, kept apart from clients. Leave blank to switch lead folders off."
+      >
+        <Input
+          id={`${uid}-leadroot`}
+          name="spLeadFolder"
+          defaultValue={settings?.spLeadFolder ?? "Leads"}
+          placeholder="Leads"
+        />
+      </Field>
+
       <CheckboxField
         id={`${uid}-auto`}
         name="spAutoProvision"

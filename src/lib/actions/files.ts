@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
-import { customers, projects } from "@/lib/db/schema";
+import { customers, leads, projects } from "@/lib/db/schema";
 import { getGraphToken, requireUser } from "@/lib/auth/session";
 import { getSettings } from "@/lib/data/common";
 import { ensureChildFolders, ensureFolderPath } from "@/lib/graph/sharepoint";
@@ -12,11 +12,14 @@ import { describeGraphFailure } from "@/lib/graph/errors";
 import { fail, logActivity, type ActionState } from "./shared";
 
 /**
- * Creates the SharePoint folder that backs a customer or project and records
- * where it landed. Safe to run twice — an existing folder is reused.
+ * Creates the SharePoint folder that backs a customer, lead or project and
+ * records where it landed. Safe to run twice — an existing folder is reused.
+ *
+ * Customers and projects live under the client folder; leads live under their
+ * own root, so a prospect's proposal is not filed among the clients.
  */
 export async function provisionFolder(
-  scope: { customerId: string } | { projectId: string },
+  scope: { customerId: string } | { projectId: string } | { leadId: string },
 ): Promise<ActionState> {
   await requireUser();
   const db = getDb();
@@ -96,6 +99,51 @@ export async function provisionFolder(
       return { ok: true, message: "SharePoint folder ready." };
     }
 
+    if ("leadId" in scope) {
+      const [lead] = await db
+        .select({ id: leads.id, name: leads.companyName })
+        .from(leads)
+        .where(eq(leads.id, scope.leadId))
+        .limit(1);
+      if (!lead) return fail("That lead no longer exists.");
+
+      const leadRoot = settings.spLeadFolder?.trim() ?? "";
+      if (!leadRoot) {
+        return fail(
+          "Lead folders are switched off. An admin can set where they go in Settings.",
+        );
+      }
+
+      // Leads sit in their own root, not inside the client folder — a prospect
+      // is not a client, and the two should not be mixed in the library.
+      // No structure template either: a lead folder holds a proposal, not a job.
+      const folder = await ensureFolderPath(token, settings.spDriveId, [
+        leadRoot,
+        lead.name,
+      ]);
+
+      await db
+        .update(leads)
+        .set({
+          spDriveId: settings.spDriveId,
+          spItemId: folder.id,
+          spWebUrl: folder.webUrl,
+          updatedAt: new Date(),
+        })
+        .where(eq(leads.id, lead.id));
+
+      await logActivity({
+        entityType: "lead",
+        entityId: lead.id,
+        leadId: lead.id,
+        verb: "files_linked",
+        summary: `Connected the SharePoint folder for ${lead.name}`,
+      });
+
+      revalidatePath(`/leads/${lead.id}`);
+      return { ok: true, message: "SharePoint folder ready." };
+    }
+
     const [project] = await db
       .select({
         id: projects.id,
@@ -151,7 +199,7 @@ export async function provisionFolder(
  * "Create SharePoint folder" as the retry.
  */
 export async function autoProvisionFolder(
-  scope: { customerId: string } | { projectId: string },
+  scope: { customerId: string } | { projectId: string } | { leadId: string },
 ): Promise<void> {
   try {
     const settings = await getSettings();

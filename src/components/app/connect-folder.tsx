@@ -12,7 +12,7 @@ export function ConnectFolder({
   libraryReady,
   canConfigure,
 }: {
-  scope: { customerId: string } | { projectId: string };
+  scope: { customerId: string } | { projectId: string } | { leadId: string };
   libraryReady: boolean;
   canConfigure: boolean;
 }) {

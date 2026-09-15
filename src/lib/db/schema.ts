@@ -286,6 +286,10 @@ export const leads = pgTable(
     nextAction: text("next_action"),
     nextActionAt: date("next_action_at"),
 
+    spDriveId: text("sp_drive_id"),
+    spItemId: text("sp_item_id"),
+    spWebUrl: text("sp_web_url"),
+
     lostReason: text("lost_reason"),
     /** Set when the lead is converted, so the history survives the handover. */
     convertedCustomerId: uuid("converted_customer_id").references(() => customers.id, {
@@ -657,6 +661,12 @@ export const settings = pgTable("settings", {
    * means a bare client folder; null means the built-in default.
    */
   spFolderTemplate: text("sp_folder_template").default(DEFAULT_CLIENT_FOLDER_TEXT),
+  /**
+   * Where lead folders go. Deliberately separate from the client folder so
+   * prospects and clients do not sit in the same place. Blank disables lead
+   * folders entirely.
+   */
+  spLeadFolder: text("sp_lead_folder").default("Leads"),
 
   /* How long something can sit untouched before the CRM says something */
   staleLeadDays: integer("stale_lead_days").notNull().default(7),

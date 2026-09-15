@@ -5,6 +5,9 @@ import { eq } from "drizzle-orm";
 import { ArrowUpRight, Building2, Globe, Mail, Phone } from "lucide-react";
 import { PageBody, PageHeader } from "@/components/app/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
+import { FilesPanel } from "@/components/app/files-panel";
+import { ConnectFolder } from "@/components/app/connect-folder";
+import { readFolder } from "@/lib/data/files";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { DataRow } from "@/components/ui/field";
@@ -19,7 +22,7 @@ import { LeadForm } from "../lead-form";
 import { getDb } from "@/lib/db";
 import { leads, users } from "@/lib/db/schema";
 import { listCommunications } from "@/lib/data/communications";
-import { listTeam } from "@/lib/data/common";
+import { getSettings, listTeam } from "@/lib/data/common";
 import { convertLead, updateLead } from "@/lib/actions/leads";
 import { requireUser } from "@/lib/auth/session";
 import { formatDate, money, relativeTime } from "@/lib/utils";
@@ -54,9 +57,11 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
   if (!row) notFound();
   const { lead, ownerName, ownerPhoto } = row;
 
-  const [entries, team] = await Promise.all([
+  const [entries, team, settings, folder] = await Promise.all([
     listCommunications({ leadId: id }),
     listTeam(),
+    getSettings(),
+    readFolder(lead.spDriveId, lead.spItemId),
   ]);
 
   const convert = convertLead.bind(null, id);
@@ -173,6 +178,28 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
                 canModerate={user.role === "admin"}
                 revalidate={`/leads/${lead.id}`}
               />
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader title="Files" meta="Stored in SharePoint" />
+            <CardBody>
+              {lead.spDriveId && lead.spItemId ? (
+                <FilesPanel
+                  driveId={lead.spDriveId}
+                  rootItemId={lead.spItemId}
+                  rootName={lead.companyName}
+                  webUrl={lead.spWebUrl}
+                  initialItems={folder.items}
+                  initialError={folder.error}
+                />
+              ) : (
+                <ConnectFolder
+                  scope={{ leadId: lead.id }}
+                  libraryReady={Boolean(settings?.spDriveId)}
+                  canConfigure={user.role === "admin"}
+                />
+              )}
             </CardBody>
           </Card>
 

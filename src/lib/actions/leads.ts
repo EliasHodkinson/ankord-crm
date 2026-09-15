@@ -7,6 +7,7 @@ import { z } from "zod";
 import { getDb } from "@/lib/db";
 import { customers, contacts, leads } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth/session";
+import { autoProvisionFolder } from "./files";
 import {
   emptyToNull,
   fail,
@@ -89,6 +90,10 @@ export async function createLead(
     verb: "created",
     summary: `Added lead ${parsed.data.companyName}`,
   });
+
+  // Best-effort: never throws, so a SharePoint problem cannot lose the record.
+  // Must run before redirect(), which throws to unwind.
+  await autoProvisionFolder({ leadId: row.id });
 
   revalidatePath("/leads");
   redirect(`/leads/${row.id}`);
