@@ -41,8 +41,8 @@ export default async function NewProjectPage({
         <PageBody>
           <div className="rounded-[10px] border border-[var(--border)] bg-[var(--surface)]">
             <EmptyState
-              title="Add a customer first"
-              description="Projects belong to a customer, so there is always somewhere for the files, contacts and email history to live."
+              title="Add a business partner first"
+              description="Projects belong to a business partner, so there is always somewhere for the files, contacts and email history to live."
               action={
                 <ButtonLink href="/customers/new" variant="primary">
                   Add a customer

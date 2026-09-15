@@ -180,7 +180,7 @@ export function CommandPalette() {
     },
     {
       id: "n-customers",
-      label: "Customers",
+      label: "Business Partners",
       group: "Go to",
       icon: Building2,
       run: () => go("/customers"),
@@ -375,7 +375,7 @@ export function CommandPalette() {
                 items[cursor]?.run();
               }
             }}
-            placeholder="Search customers, people, projects — or type a command"
+            placeholder="Search partners, people, projects — or type a command"
             aria-label="Search or run a command"
             className="h-12 flex-1 bg-transparent text-[14px] text-[var(--text)] outline-none placeholder:text-[var(--text-faint)]"
           />

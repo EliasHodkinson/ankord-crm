@@ -27,7 +27,7 @@ const SECTIONS: { heading?: string; items: NavItem[] }[] = [
     heading: "Pipeline",
     items: [
       { href: "/leads", label: "Leads", icon: Target },
-      { href: "/customers", label: "Customers", icon: Building2 },
+      { href: "/customers", label: "Business Partners", icon: Building2 },
       { href: "/contacts", label: "People", icon: Users },
     ],
   },

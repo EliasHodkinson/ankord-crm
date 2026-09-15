@@ -246,7 +246,7 @@ export default async function DashboardPage() {
           <Stat
             href="/customers"
             icon={Building2}
-            label="Active customers"
+            label="Business partners"
             value={String(counts[0]?.customers ?? 0)}
             detail="On the books"
           />
@@ -450,7 +450,7 @@ export default async function DashboardPage() {
             <EmptyState
               compact
               title="Nothing has happened yet"
-              description="Add a lead or a customer and the trail starts here."
+              description="Add a lead or a business partner and the trail starts here."
             />
           ) : (
             <CardBody>

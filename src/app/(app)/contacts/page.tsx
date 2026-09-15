@@ -62,7 +62,7 @@ export default async function ContactsPage({
     <>
       <PageHeader
         title="People"
-        description="Everyone across every customer — including the details that make the next conversation land."
+        description="Everyone across every business partner — including the details that make the next conversation land."
         meta={
           <p className="text-[13px] text-[var(--text-muted)]">
             <span className="font-semibold text-[var(--text)]">{rows.length}</span>{" "}

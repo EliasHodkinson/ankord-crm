@@ -23,7 +23,7 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
       { keys: ["G", "O"], label: "Overview", href: "/" },
       { keys: ["G", "F"], label: "Follow-ups", href: "/tasks" },
       { keys: ["G", "L"], label: "Leads", href: "/leads" },
-      { keys: ["G", "C"], label: "Customers", href: "/customers" },
+      { keys: ["G", "C"], label: "Business Partners", href: "/customers" },
       { keys: ["G", "P"], label: "Projects", href: "/projects" },
       { keys: ["G", "E"], label: "Link email", href: "/inbox" },
       { keys: ["G", "R"], label: "Reports", href: "/reports" },
@@ -33,7 +33,7 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
     title: "Create",
     items: [
       { keys: ["N", "L"], label: "New lead", href: "/leads/new" },
-      { keys: ["N", "C"], label: "New customer", href: "/customers/new" },
+      { keys: ["N", "C"], label: "New business partner", href: "/customers/new" },
       { keys: ["N", "P"], label: "New project", href: "/projects/new" },
     ],
   },

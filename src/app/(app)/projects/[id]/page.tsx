@@ -275,7 +275,7 @@ export default async function ProjectPage({
             <CardHeader title="Details" />
             <CardBody>
               <dl className="divide-y divide-[var(--border-soft)]">
-                <DataRow label="Customer">
+                <DataRow label="Business partner">
                   <Link
                     href={`/customers/${project.customer.id}`}
                     className="text-[var(--color-coastal-600)] hover:underline underline-offset-2"

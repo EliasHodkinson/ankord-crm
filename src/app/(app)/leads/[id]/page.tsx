@@ -120,12 +120,12 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
               className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[var(--color-coastal-600)] hover:underline underline-offset-2"
             >
               <Building2 className="size-4" />
-              Open the customer record
+              Open the business partner record
             </Link>
           ) : (
             <form action={convert}>
               <Button type="submit" variant="primary">
-                Convert to customer
+                Convert to business partner
                 <ArrowUpRight />
               </Button>
             </form>
@@ -173,7 +173,7 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
               <Timeline
                 entries={entries}
                 emptyTitle="No history on this lead yet"
-                emptyDescription="Log the first call or note. Once they become a customer this history follows them across."
+                emptyDescription="Log the first call or note. Once they become a business partner this history follows them across."
                 currentUserId={user.id}
                 canModerate={user.role === "admin"}
                 revalidate={`/leads/${lead.id}`}

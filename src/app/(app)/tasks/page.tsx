@@ -52,7 +52,7 @@ export default async function TasksPage({
     <>
       <PageHeader
         title="Follow-ups"
-        description="Everything you said you would do. Set one from any lead, customer or project and it turns up here on the day."
+        description="Everything you said you would do. Set one from any lead, business partner or project and it turns up here on the day."
         meta={
           <p className="text-[13px] text-[var(--text-muted)]">
             <span className="font-semibold text-[var(--text)]">{open}</span> open
@@ -101,7 +101,7 @@ export default async function TasksPage({
           revalidate="/tasks"
           showOwner={who === "everyone"}
           emptyTitle={who === "everyone" ? "The team is clear" : "You're all clear"}
-          emptyDescription="Set a follow-up from a lead, a customer or a project and it will show up here, grouped by when it's due."
+          emptyDescription="Set a follow-up from a lead, a business partner or a project and it will show up here, grouped by when it's due."
         />
 
         {/* Only ever syncs the signed-in person's own list, so it is hidden

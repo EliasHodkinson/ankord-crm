@@ -51,7 +51,7 @@ export function ProjectForm({
         <FormRow>
           <SelectField
             name="customerId"
-            label="Customer"
+            label="Business partner"
             required
             id={f("customerId")}
             defaultValue={project?.customerId ?? defaultCustomerId ?? ""}

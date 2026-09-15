@@ -30,7 +30,7 @@ import { listSavedViews } from "@/lib/data/saved-views";
 import { heatOf, heatSummary } from "@/lib/staleness";
 import { requireUser } from "@/lib/auth/session";
 
-export const metadata: Metadata = { title: "Customers" };
+export const metadata: Metadata = { title: "Business Partners" };
 export const dynamic = "force-dynamic";
 
 export default async function CustomersPage({
@@ -83,7 +83,7 @@ export default async function CustomersPage({
   return (
     <>
       <PageHeader
-        title="Customers"
+        title="Business Partners"
         description="Everyone Ankor'd deals with — customers, suppliers, media, the people inside them, and what's running right now."
         meta={
           <p className="text-[13px] text-[var(--text-muted)]">
@@ -96,7 +96,7 @@ export default async function CustomersPage({
         actions={
           <ButtonLink href="/customers/new" variant="primary">
             <Plus />
-            New customer
+            Create Business Partner
           </ButtonLink>
         }
       />
@@ -105,7 +105,7 @@ export default async function CustomersPage({
         <SavedViews entity="customers" views={views} currentUserId={user.id} />
 
         <FilterBar
-          searchPlaceholder="Search customers…"
+          searchPlaceholder="Search business partners…"
           filters={[
             {
               param: "kind",
@@ -139,17 +139,17 @@ export default async function CustomersPage({
           <div className="rounded-[10px] border border-[var(--border)] bg-[var(--surface)]">
             <EmptyState
               title={
-                q || status || kind ? "Nothing matches that" : "No customers yet"
+                q || status || kind ? "Nothing matches that" : "No business partners yet"
               }
               description={
                 q || status || kind
                   ? "Try a different relationship or status, or clear the search."
-                  : "Add a business Ankor'd works for. You can also convert a won lead, which brings its contact and history across."
+                  : "Add a business Ankor'd deals with — a customer, a supplier, a media contact. You can also convert a won lead, which brings its contact and history across."
               }
               action={
                 <ButtonLink href="/customers/new" variant="primary">
                   <Plus />
-                  New customer
+                  Create Business Partner
                 </ButtonLink>
               }
             />
@@ -164,7 +164,7 @@ export default async function CustomersPage({
                     <Th className="w-9">
                       <HeaderCheckbox ids={rows.map((r) => r.customer.id)} />
                     </Th>
-                    <Th>Customer</Th>
+                    <Th>Business partner</Th>
                     <Th>Status</Th>
                     <Th>Industry</Th>
                     <Th numeric>People</Th>

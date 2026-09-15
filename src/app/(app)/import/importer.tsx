@@ -144,7 +144,7 @@ export function Importer() {
               What are you bringing in?
             </span>
             <Select value={kind} onChange={(e) => setKind(e.target.value as ImportKind)}>
-              <option value="customers">Customers</option>
+              <option value="customers">Business partners</option>
               <option value="leads">Leads</option>
             </Select>
           </label>

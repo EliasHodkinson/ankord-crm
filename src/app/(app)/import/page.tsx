@@ -13,7 +13,7 @@ export default async function ImportPage() {
     <>
       <PageHeader
         title="Import"
-        description="Bring customers or leads across from a spreadsheet or another CRM. Nothing is saved until you have seen exactly what will be created."
+        description="Bring business partners or leads across from a spreadsheet or another CRM. Nothing is saved until you have seen exactly what will be created."
       />
       <PageBody className="max-w-4xl">
         <Importer />

@@ -87,7 +87,7 @@ export default async function CustomerPage({
       />
       <PageHeader
         title={customer.name}
-        crumbs={[{ label: "Customers", href: "/customers" }, { label: customer.name }]}
+        crumbs={[{ label: "Business Partners", href: "/customers" }, { label: customer.name }]}
         eyebrow={
           <span className="flex flex-wrap items-center gap-1.5">
             <StatusBadge map={CUSTOMER_STATUS} value={customer.status} dot />
@@ -170,7 +170,7 @@ export default async function CustomerPage({
             {customer.projects.length === 0 ? (
               <EmptyState
                 compact
-                title="No projects for this customer"
+                title="No projects for this business partner"
                 description="Start one from a runbook template — phases, steps, key contacts and an account register, ready to work through."
                 action={
                   <ButtonLink
@@ -270,7 +270,7 @@ export default async function CustomerPage({
           <Card>
             <CardHeader
               title="Account register"
-              meta="Systems this customer owns, and where the credentials live — never the credentials themselves"
+              meta="Systems this business partner owns, and where the credentials live — never the credentials themselves"
             />
             <CardBody>
               <AccountRegister
@@ -306,7 +306,7 @@ export default async function CustomerPage({
           </Card>
 
           <Card>
-            <CardHeader title="Customer details" />
+            <CardHeader title="Business partner details" />
             <CardBody>
               <CustomerForm
                 action={updateCustomer.bind(null, customer.id)}
@@ -368,7 +368,7 @@ export default async function CustomerPage({
                   <span className="tabular">{customer.abn ?? "—"}</span>
                 </DataRow>
                 <DataRow label="Segment">{customer.segment ?? "—"}</DataRow>
-                <DataRow label="Customer since">{formatDate(customer.createdAt)}</DataRow>
+                <DataRow label="Partner since">{formatDate(customer.createdAt)}</DataRow>
               </dl>
 
               {customer.tags.length > 0 ? (

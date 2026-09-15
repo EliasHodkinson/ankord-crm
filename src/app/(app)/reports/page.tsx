@@ -272,7 +272,7 @@ export default async function ReportsPage() {
 
         <Card>
           <CardHeader
-            title="Customers going quiet"
+            title="Business partners going quiet"
             meta={`No contact in over ${thresholds.customer} days`}
           />
           {goneQuiet.length === 0 ? (

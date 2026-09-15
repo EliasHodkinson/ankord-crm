@@ -190,7 +190,7 @@ export function LibraryPicker({
         <Field
           label="Client folder"
           htmlFor={`${uid}-root`}
-          hint="Customer and project folders are created inside this. Leave blank to use the library root."
+          hint="Business partner and project folders are created inside this. Leave blank to use the library root."
         >
           <Input
             id={`${uid}-root`}
@@ -218,14 +218,14 @@ export function LibraryPicker({
         id={`${uid}-auto`}
         name="spAutoProvision"
         label="Create folders automatically"
-        hint="Make the SharePoint folder as soon as a customer or project is created, rather than on request."
+        hint="Make the SharePoint folder as soon as a business partner or project is created, rather than on request."
         defaultChecked={settings?.spAutoProvision ?? true}
       />
 
       <Field
         label="Client folder structure"
         htmlFor={`${uid}-template`}
-        hint="One folder per line, created inside each new customer folder. Leave blank for a bare folder. Project folders are not given a structure."
+        hint="One folder per line, created inside each new business partner folder. Leave blank for a bare folder. Project folders are not given a structure."
       >
         <Textarea
           id={`${uid}-template`}
