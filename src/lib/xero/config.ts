@@ -14,12 +14,25 @@ export const XERO_API_BASE = "https://api.xero.com/api.xro/2.0";
  *
  * `offline_access` is what yields a refresh token — without it the connection
  * dies thirty minutes after it is made.
+ *
+ * **These must be the granular scopes.** Xero split the broad ones on
+ * 2 March 2026, and an app created on or after that date cannot use the old
+ * names at all — requesting them fails the authorize call outright with
+ * `invalid_scope`, before the user ever sees a consent screen:
+ *
+ *   accounting.transactions.read → accounting.invoices.read (and payments,
+ *                                  banktransactions, manualjournals)
+ *   accounting.reports.read      → one scope per report; aged is the one
+ *                                  that carries receivables and payables
+ *
+ * Only what is actually displayed is requested. Invoices carry AmountDue and
+ * AmountPaid, so accounting.payments.read is not needed to show a balance.
  */
 export const XERO_SCOPES = [
   "offline_access",
   "accounting.contacts.read",
-  "accounting.transactions.read",
-  "accounting.reports.read",
+  "accounting.invoices.read",
+  "accounting.reports.aged.read",
 ] as const;
 
 export const XERO_SCOPE_STRING = XERO_SCOPES.join(" ");

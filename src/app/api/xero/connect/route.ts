@@ -28,12 +28,19 @@ export async function GET(request: NextRequest) {
 
   const state = randomUrlSafe(24);
 
-  const target = new URL(XERO_AUTHORIZE_URL);
-  target.searchParams.set("response_type", "code");
-  target.searchParams.set("client_id", process.env.XERO_CLIENT_ID!);
-  target.searchParams.set("redirect_uri", xeroRedirectUri(appUrl()));
-  target.searchParams.set("scope", XERO_SCOPE_STRING);
-  target.searchParams.set("state", state);
+  // Built by hand rather than with URLSearchParams, which encodes a space as
+  // "+". That is legal in a form-encoded body but ambiguous in a query string,
+  // and the scope list is the one parameter where a mis-parse is silent: Xero
+  // answers `invalid_scope` either way, whether a name is wrong or the whole
+  // list arrived as a single token. %20 removes the doubt.
+  const query = [
+    "response_type=code",
+    `client_id=${encodeURIComponent(process.env.XERO_CLIENT_ID!)}`,
+    `redirect_uri=${encodeURIComponent(xeroRedirectUri(appUrl()))}`,
+    `scope=${encodeURIComponent(XERO_SCOPE_STRING)}`,
+    `state=${encodeURIComponent(state)}`,
+  ].join("&");
+  const target = `${XERO_AUTHORIZE_URL}?${query}`;
 
   const response = NextResponse.redirect(target);
   response.cookies.set("ankord_xero_state", state, {
