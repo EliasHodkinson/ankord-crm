@@ -2,11 +2,13 @@
 
 import { useOptimistic, useState, useTransition } from "react";
 import Link from "next/link";
-import { Building2, Clock, FolderKanban, Target, Trash2 } from "lucide-react";
+import { Building2, Clock, FolderKanban, Pencil, Target, Trash2 } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { deleteTask, setTaskStatus, snoozeTask } from "@/lib/actions/tasks";
+import { Input, Select } from "@/components/ui/field";
+import { deleteTask, setTaskStatus, snoozeTask, updateTask } from "@/lib/actions/tasks";
 import { BUCKET_LABEL, BUCKET_ORDER, bucketOf, type TaskBucket } from "@/lib/tasks";
 import { cn, formatDate } from "@/lib/utils";
 
@@ -124,8 +126,94 @@ function Row({
 }) {
   const [pending, start] = useTransition();
   const [confirming, setConfirming] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const bucket = bucketOf(task);
   const done = task.status === "done";
+
+  if (editing) {
+    return (
+      <li className={cn("px-3 py-2.5", pending && "opacity-50")}>
+        <form
+          className="flex flex-col gap-2"
+          action={(formData) =>
+            start(async () => {
+              const result = await updateTask(
+                task.id,
+                {
+                  title: String(formData.get("title") ?? ""),
+                  detail: (String(formData.get("detail") ?? "").trim() || null) as string | null,
+                  priority: String(formData.get("priority") ?? "normal"),
+                  dueDate: (String(formData.get("dueDate") ?? "").trim() || null) as string | null,
+                },
+                revalidate,
+              );
+              if (result.ok) {
+                setEditing(false);
+                setError(null);
+              } else {
+                setError(result.message ?? "That didn't work.");
+              }
+            })
+          }
+        >
+          <Input
+            name="title"
+            defaultValue={task.title}
+            aria-label="Follow-up"
+            autoFocus
+            className="text-[13px]"
+          />
+          <Input
+            name="detail"
+            defaultValue={task.detail ?? ""}
+            aria-label="Detail"
+            placeholder="Detail (optional)"
+            className="text-[12px]"
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              type="date"
+              name="dueDate"
+              defaultValue={task.dueDate ?? ""}
+              aria-label="Due date"
+              className="h-8 w-auto text-[12px]"
+            />
+            <Select
+              name="priority"
+              defaultValue={task.priority}
+              aria-label="Priority"
+              className="h-8 w-auto min-w-24 text-[12px]"
+            >
+              <option value="low">Low</option>
+              <option value="normal">Normal</option>
+              <option value="high">High</option>
+              <option value="urgent">Urgent</option>
+            </Select>
+            <Button type="submit" variant="primary" size="sm" disabled={pending} className="ml-auto">
+              Save
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setEditing(false);
+                setError(null);
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+          {error ? (
+            <p role="alert" className="text-[11px] text-[var(--danger)]">
+              {error}
+            </p>
+          ) : null}
+        </form>
+      </li>
+    );
+  }
 
   const link = task.projectId
     ? { href: `/projects/${task.projectId}`, label: task.projectName, icon: FolderKanban }
@@ -203,7 +291,19 @@ function Row({
         {!done ? (
           <button
             type="button"
-            title="Push out a week"
+            title="Edit this follow-up"
+            aria-label={`Edit "${task.title}"`}
+            disabled={pending}
+            onClick={() => setEditing(true)}
+            className="rounded p-1 text-[var(--text-faint)] transition-colors hover:text-[var(--text)]"
+          >
+            <Pencil className="size-3.5" />
+          </button>
+        ) : null}
+        {!done ? (
+          <button
+            type="button"
+            title="Push the due date out one week from today"
             aria-label={`Push "${task.title}" out a week`}
             disabled={pending}
             onClick={() => start(() => void snoozeTask(task.id, 7, revalidate))}

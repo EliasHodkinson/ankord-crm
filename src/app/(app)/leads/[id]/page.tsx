@@ -6,7 +6,7 @@ import { ArrowUpRight, Building2, Globe, Mail, Phone } from "lucide-react";
 import { PageBody, PageHeader } from "@/components/app/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { DataRow } from "@/components/ui/field";
 import { Avatar } from "@/components/ui/avatar";
 import { LEAD_STAGES, StatusBadge } from "@/components/ui/status";
@@ -155,7 +155,13 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
           <Card>
             <CardHeader
               title="History"
-              meta={`${entries.length} ${entries.length === 1 ? "entry" : "entries"}`}
+              meta={`${entries.length} ${entries.length === 1 ? "entry" : "entries"} · emails linked from Microsoft 365 appear here`}
+              action={
+                <ButtonLink href={`/inbox?lead=${lead.id}`} variant="ghost" size="sm">
+                  <Mail />
+                  Link email
+                </ButtonLink>
+              }
             />
             <CardBody className="flex flex-col gap-4">
               <LogCommunication leadId={lead.id} redirectTo={`/leads/${lead.id}`} />

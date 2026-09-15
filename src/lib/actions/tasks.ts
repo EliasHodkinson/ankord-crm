@@ -63,6 +63,43 @@ export async function createTask(
   return { ok: true, message: "Follow-up set." };
 }
 
+/** The parts of a follow-up worth changing after the fact. */
+const editSchema = z.object({
+  title: z.string().trim().min(1, "What needs doing?"),
+  detail: optionalText,
+  priority: z.enum(["low", "normal", "high", "urgent"]),
+  dueDate: optionalDate,
+});
+
+/**
+ * Edits an existing follow-up. Snoozing only ever pushes the due date a week
+ * out from today, so this is the way to set a specific date — or to fix a
+ * typo in the title, which was previously only possible by deleting it.
+ */
+export async function updateTask(
+  id: string,
+  values: {
+    title: string;
+    detail: string | null;
+    priority: string;
+    dueDate: string | null;
+  },
+  revalidate = "/tasks",
+): Promise<ActionState> {
+  await requireUser();
+  const parsed = editSchema.safeParse(values);
+  if (!parsed.success) return fromZod(parsed.error);
+
+  await getDb()
+    .update(tasks)
+    .set({ ...parsed.data, updatedAt: new Date() })
+    .where(eq(tasks.id, id));
+
+  revalidatePath(revalidate);
+  revalidatePath("/tasks");
+  return { ok: true, message: "Follow-up updated." };
+}
+
 export async function setTaskStatus(
   id: string,
   done: boolean,
