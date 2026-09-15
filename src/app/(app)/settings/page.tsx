@@ -6,10 +6,13 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { DataRow } from "@/components/ui/field";
 import { LibraryPicker } from "./library-picker";
 import { TeamTable } from "./team-table";
+import { XeroPanel } from "./xero-panel";
 import { getDb } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { getSettings } from "@/lib/data/common";
 import { readLibraries } from "@/lib/data/files";
+import { readXeroConnection } from "@/lib/xero/auth";
+import { xeroConfigured } from "@/lib/xero/config";
 import { requireUser } from "@/lib/auth/session";
 import { GRAPH_SCOPES } from "@/lib/auth/entra";
 import { appUrl, redirectUri } from "@/lib/env";
@@ -18,11 +21,28 @@ import { formatDateTime } from "@/lib/utils";
 export const metadata: Metadata = { title: "Settings" };
 export const dynamic = "force-dynamic";
 
-export default async function SettingsPage() {
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ xero?: string; org?: string; detail?: string }>;
+}) {
   const { user } = await requireUser();
   const isAdmin = user.role === "admin";
+  const { xero, org, detail } = await searchParams;
 
-  const [settings, team] = await Promise.all([
+  const xeroNotice =
+    xero === "connected"
+      ? { kind: "connected" as const, detail: `Connected to ${org ?? "Xero"}.` }
+      : xero === "error"
+        ? { kind: "error" as const, detail: detail ?? "Xero would not connect." }
+        : xero === "not-configured"
+          ? {
+              kind: "error" as const,
+              detail: "Xero credentials are missing from this deployment.",
+            }
+          : null;
+
+  const [settings, team, xeroConnection] = await Promise.all([
     getSettings(),
     getDb()
       .select({
@@ -38,6 +58,7 @@ export default async function SettingsPage() {
       })
       .from(users)
       .orderBy(asc(users.name)),
+    readXeroConnection().catch(() => null),
   ]);
 
   // Only an admin can see the picker, so only an admin pays for this call.
@@ -137,6 +158,28 @@ export default async function SettingsPage() {
                 ) : (
                   "An administrator needs to connect a SharePoint document library before files can be stored against customers and projects."
                 )}
+              </p>
+            )}
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader
+            title="Xero"
+            meta="Account balances and invoice history against customers and suppliers"
+          />
+          <CardBody>
+            {isAdmin ? (
+              <XeroPanel
+                connection={xeroConnection}
+                configured={xeroConfigured()}
+                notice={xeroNotice}
+              />
+            ) : (
+              <p className="text-[13px] text-[var(--text-muted)]">
+                {xeroConnection
+                  ? `Connected to ${xeroConnection.tenantName ?? "Xero"}.`
+                  : "Not connected. An administrator can link Xero here."}
               </p>
             )}
           </CardBody>

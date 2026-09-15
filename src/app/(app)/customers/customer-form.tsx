@@ -63,6 +63,17 @@ export function CustomerForm({
             placeholder="12 345 678 901"
           />
           <SelectField
+            name="kind"
+            label="Relationship"
+            id={f("kind")}
+            defaultValue={customer?.kind ?? "customer"}
+            options={[
+              { value: "customer", label: "Customer" },
+              { value: "supplier", label: "Supplier" },
+              { value: "both", label: "Customer & supplier" },
+            ]}
+          />
+          <SelectField
             name="status"
             label="Status"
             id={f("status")}

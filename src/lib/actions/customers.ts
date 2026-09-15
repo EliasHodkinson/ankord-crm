@@ -23,6 +23,7 @@ const customerSchema = z.object({
   name: z.string().trim().min(1, "Give the customer a name."),
   legalName: optionalText,
   abn: optionalText,
+  kind: z.enum(["customer", "supplier", "both"]).default("customer"),
   status: z.enum(["prospect", "active", "on_hold", "former"]),
   industry: optionalText,
   segment: optionalText,

@@ -81,7 +81,17 @@ export default async function CustomerPage({
       <PageHeader
         title={customer.name}
         crumbs={[{ label: "Customers", href: "/customers" }, { label: customer.name }]}
-        eyebrow={<StatusBadge map={CUSTOMER_STATUS} value={customer.status} dot />}
+        eyebrow={
+          <span className="flex flex-wrap items-center gap-1.5">
+            <StatusBadge map={CUSTOMER_STATUS} value={customer.status} dot />
+            {/* Only worth saying when they are not simply a customer. */}
+            {customer.kind !== "customer" ? (
+              <Badge tone="neutral">
+                {customer.kind === "supplier" ? "Supplier" : "Customer & supplier"}
+              </Badge>
+            ) : null}
+          </span>
+        }
         description={customer.industry}
         meta={
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[13px] text-[var(--text-muted)]">

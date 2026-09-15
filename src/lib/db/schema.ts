@@ -36,6 +36,17 @@ export const leadStageEnum = pgEnum("lead_stage", [
   "lost",
 ]);
 
+/**
+ * What an organisation is to Ankor'd. Mirrors how Xero models a contact, which
+ * carries independent IsCustomer and IsSupplier flags — the same business can
+ * be both, and duplicating the record to express that would be worse.
+ */
+export const customerKindEnum = pgEnum("customer_kind", [
+  "customer",
+  "supplier",
+  "both",
+]);
+
 export const customerStatusEnum = pgEnum("customer_status", [
   "prospect",
   "active",
@@ -155,7 +166,10 @@ export const customers = pgTable(
     name: text("name").notNull(),
     legalName: text("legal_name"),
     abn: text("abn"),
+    kind: customerKindEnum("kind").notNull().default("customer"),
     status: customerStatusEnum("status").notNull().default("active"),
+    /** The Xero ContactID this organisation is linked to, if any. */
+    xeroContactId: text("xero_contact_id"),
     industry: text("industry"),
     website: text("website"),
     phone: text("phone"),
@@ -190,6 +204,8 @@ export const customers = pgTable(
     index("customers_last_activity_idx").on(t.lastActivityAt),
     index("customers_owner_idx").on(t.ownerId),
     index("customers_name_idx").on(t.name),
+    index("customers_kind_idx").on(t.kind),
+    index("customers_xero_idx").on(t.xeroContactId),
   ],
 );
 
@@ -673,6 +689,36 @@ export const settings = pgTable("settings", {
   staleCustomerDays: integer("stale_customer_days").notNull().default(90),
   staleProjectDays: integer("stale_project_days").notNull().default(14),
   updatedById: uuid("updated_by_id").references(() => users.id, { onDelete: "set null" }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/* ───────────────────────── xero ───────────────────────── */
+
+/**
+ * The tenant-wide Xero connection. One row, like settings.
+ *
+ * Xero refresh tokens are **single use**: every refresh returns a new pair and
+ * invalidates the old refresh token. The new one must be written back
+ * immediately or the connection dies within the hour. Xero allows a 30-minute
+ * grace window in which the previous token can be retried if the response was
+ * lost, which is the only reason a failed write is recoverable at all.
+ *
+ * Tokens are encrypted at rest with APP_ENCRYPTION_KEY, as Microsoft's are.
+ */
+export const xeroConnection = pgTable("xero_connection", {
+  id: text("id").primaryKey().default("singleton"),
+  /** Xero organisation ("tenant") this connection is scoped to. */
+  tenantId: text("tenant_id"),
+  tenantName: text("tenant_name"),
+
+  accessTokenEnc: text("access_token_enc"),
+  accessTokenExpiresAt: timestamp("access_token_expires_at", { withTimezone: true }),
+  refreshTokenEnc: text("refresh_token_enc"),
+  /** When the pair was last rotated — the 60-day clock runs from here. */
+  refreshedAt: timestamp("refreshed_at", { withTimezone: true }),
+
+  connectedById: uuid("connected_by_id").references(() => users.id, { onDelete: "set null" }),
+  connectedAt: timestamp("connected_at", { withTimezone: true }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

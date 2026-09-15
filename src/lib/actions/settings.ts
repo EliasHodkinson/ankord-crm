@@ -6,6 +6,7 @@ import { z } from "zod";
 import { getDb } from "@/lib/db";
 import { settings, users } from "@/lib/db/schema";
 import { requireAdmin } from "@/lib/auth/session";
+import { disconnectXero } from "@/lib/xero/auth";
 import {
   emptyToNull,
   fail,
@@ -115,4 +116,20 @@ export async function setUserActive(userId: string, isActive: boolean): Promise<
 
   revalidatePath("/settings");
   return { ok: true };
+}
+
+/** Drops the Xero connection. Admin-only, like connecting it. */
+export async function disconnectXeroAction(): Promise<ActionState> {
+  const { user } = await requireAdmin();
+  await disconnectXero();
+
+  await logActivity({
+    entityType: "settings",
+    entityId: "singleton",
+    verb: "xero_disconnected",
+    summary: `${user.name} disconnected Xero`,
+  });
+
+  revalidatePath("/settings");
+  return { ok: true, message: "Xero disconnected." };
 }
