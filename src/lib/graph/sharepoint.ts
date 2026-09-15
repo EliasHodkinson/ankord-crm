@@ -199,6 +199,40 @@ export async function ensureChildFolders(
   return { created, failed };
 }
 
+/**
+ * Writes (or overwrites) a small text file inside a folder.
+ *
+ * Deliberately `replace`, not `rename` like uploadFile: this is for generated
+ * documents that have one canonical copy. Renaming on conflict would leave a
+ * trail of "_Brief 1.md", "_Brief 2.md" behind every regeneration.
+ */
+export async function writeTextFile(
+  token: string,
+  driveId: string,
+  parentId: string,
+  /** Relative to the parent. May contain "/" for a file inside a subfolder. */
+  path: string,
+  content: string,
+): Promise<DriveItem> {
+  // Each segment is encoded separately — encoding the whole path would turn
+  // the separators into %2F and address one absurdly-named file instead.
+  const encoded = path
+    .split("/")
+    .filter(Boolean)
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+
+  return graphFetch<DriveItem>(
+    token,
+    `/drives/${driveId}/items/${parentId}:/${encoded}:/content?@microsoft.graph.conflictBehavior=replace`,
+    {
+      method: "PUT",
+      headers: { "content-type": "text/markdown" },
+      rawBody: new TextEncoder().encode(content),
+    },
+  );
+}
+
 /** Simple upload — Graph accepts a single PUT up to 4 MB. */
 const SIMPLE_UPLOAD_LIMIT = 4 * 1024 * 1024;
 

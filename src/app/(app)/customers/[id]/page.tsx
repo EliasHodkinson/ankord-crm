@@ -24,6 +24,8 @@ import { FilesPanel } from "@/components/app/files-panel";
 import { ConnectFolder } from "@/components/app/connect-folder";
 import { CheckStructure } from "@/components/app/check-structure";
 import { XeroAccount } from "@/components/app/xero-account";
+import { CopilotBrief } from "@/components/app/copilot-brief";
+import { RecordNav } from "@/components/app/record-nav";
 import { AccountRegister } from "@/components/app/account-register";
 import { CustomerForm } from "../customer-form";
 import { getCustomer } from "@/lib/data/customers";
@@ -146,9 +148,21 @@ export default async function CustomerPage({
         }
       />
 
-      <PageBody className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_23rem]">
+      <PageBody className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_23rem] xl:grid-cols-[10rem_minmax(0,1fr)_23rem]">
+        <RecordNav
+          className="col-span-full xl:col-span-1"
+          sections={[
+            { id: "projects", label: "Projects", count: customer.projects.length },
+            { id: "people", label: "People", count: customer.contacts.length },
+            { id: "history", label: "History", count: entries.length },
+            { id: "accounts", label: "Accounts", count: customer.accounts.length },
+            { id: "xero", label: "Xero" },
+            { id: "details", label: "Details" },
+            { id: "files", label: "Files" },
+          ]}
+        />
         <div className="flex flex-col gap-5">
-          <Card>
+          <Card id="projects" className="scroll-mt-20">
             <CardHeader
               title="Projects"
               meta={
@@ -221,7 +235,7 @@ export default async function CustomerPage({
             )}
           </Card>
 
-          <Card>
+          <Card id="people" className="scroll-mt-20">
             <CardHeader
               title="People"
               meta="Who we actually deal with, and what makes them tick"
@@ -237,7 +251,7 @@ export default async function CustomerPage({
             placeholder="Send the quarterly report…"
           />
 
-          <Card>
+          <Card id="history" className="scroll-mt-20">
             <CardHeader
               title="Communications"
               meta={`${entries.length} logged · emails linked from Microsoft 365 appear here`}
@@ -267,7 +281,7 @@ export default async function CustomerPage({
             </CardBody>
           </Card>
 
-          <Card>
+          <Card id="accounts" className="scroll-mt-20">
             <CardHeader
               title="Account register"
               meta="Systems this business partner owns, and where the credentials live — never the credentials themselves"
@@ -281,7 +295,7 @@ export default async function CustomerPage({
             </CardBody>
           </Card>
 
-          <Card>
+          <Card id="xero" className="scroll-mt-20">
             <CardHeader
               title="Xero"
               meta={
@@ -305,7 +319,7 @@ export default async function CustomerPage({
             </CardBody>
           </Card>
 
-          <Card>
+          <Card id="details" className="scroll-mt-20">
             <CardHeader title="Business partner details" />
             <CardBody>
               <CustomerForm
@@ -320,7 +334,7 @@ export default async function CustomerPage({
         </div>
 
         <div className="flex flex-col gap-5">
-          <Card>
+          <Card id="files" className="scroll-mt-20">
             <CardHeader title="Files" meta="Stored in SharePoint" />
             <CardBody>
               {customer.spDriveId && customer.spItemId ? (
@@ -342,6 +356,17 @@ export default async function CustomerPage({
                   canConfigure={user.role === "admin"}
                 />
               )}
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader title="Copilot brief" meta="So Copilot can answer about them" />
+            <CardBody>
+              <CopilotBrief
+                customerId={customer.id}
+                writtenAt={customer.briefWrittenAt}
+                hasFolder={Boolean(customer.spDriveId && customer.spItemId)}
+              />
             </CardBody>
           </Card>
 

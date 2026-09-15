@@ -189,6 +189,11 @@ export const customers = pgTable(
     spDriveId: text("sp_drive_id"),
     spItemId: text("sp_item_id"),
     spWebUrl: text("sp_web_url"),
+    /**
+     * When the Copilot brief was last written into SharePoint. Shown in the
+     * record so a stale brief is visible rather than quietly wrong.
+     */
+    briefWrittenAt: timestamp("brief_written_at", { withTimezone: true }),
 
     tags: text("tags").array().notNull().default(sql`ARRAY[]::text[]`),
     notes: text("notes"),

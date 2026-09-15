@@ -1,0 +1,1 @@
+ALTER TABLE "customers" ADD COLUMN "brief_written_at" timestamp with time zone;

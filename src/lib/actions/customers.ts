@@ -8,6 +8,7 @@ import { getDb } from "@/lib/db";
 import { customers } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth/session";
 import { autoProvisionFolder } from "./files";
+import { refreshBriefIfPresent } from "./brief";
 import {
   fromZod,
   logActivity,
@@ -97,12 +98,16 @@ export async function updateCustomer(
     .set({ ...parsed.data, updatedAt: new Date() })
     .where(eq(customers.id, id));
 
+  // Keeps an existing brief in step with the record. Never throws, and never
+  // creates one that was not already there.
+  await refreshBriefIfPresent(id);
+
   await logActivity({
     entityType: "customer",
     entityId: id,
     customerId: id,
     verb: "updated",
-    summary: "Updated customer details",
+    summary: "Updated business partner details",
   });
 
   revalidatePath(`/customers/${id}`);

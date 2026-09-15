@@ -71,6 +71,13 @@
       "when": 1789507309277,
       "tag": "0009_drop_customer_kind",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789508332878,
+      "tag": "0010_copilot_brief",
+      "breakpoints": true
     }
   ]
 }
