@@ -13,6 +13,14 @@ import { graphFetch, graphList } from "./client";
  * immediately.
  */
 
+/**
+ * To Do ids are long base64-ish strings that routinely contain "/", "+" and
+ * "=". Dropped into a path unescaped they break the URL itself, and Graph
+ * answers "Invalid request (RequestBroker--ParseUri)" — which says nothing
+ * about the body, because the body was never reached.
+ */
+const seg = (id: string) => encodeURIComponent(id);
+
 /** Kept out of the default Tasks list so a sync never disturbs personal items. */
 export const CRM_LIST_NAME = "Ankor'd CRM";
 
@@ -20,9 +28,9 @@ type TodoList = { id: string; displayName: string; wellknownListName?: string };
 
 export type TodoTask = {
   id: string;
-  title: string;
   status: string;
-  lastModifiedDateTime?: string;
+  /** Only present where it was asked for; the sync does not need it. */
+  title?: string;
 };
 
 /** Finds the CRM list in this person's To Do, creating it the first time. */
@@ -41,7 +49,7 @@ export async function ensureCrmList(token: string): Promise<string> {
 export function listTodoTasks(token: string, listId: string): Promise<TodoTask[]> {
   return graphList<TodoTask>(
     token,
-    `/me/todo/lists/${listId}/tasks?$select=id,title,status,lastModifiedDateTime`,
+    `/me/todo/lists/${seg(listId)}/tasks?$select=id,status`,
     100,
   );
 }
@@ -97,7 +105,7 @@ export function createTodoTask(
   listId: string,
   input: TodoPayload,
 ): Promise<TodoTask> {
-  return graphFetch<TodoTask>(token, `/me/todo/lists/${listId}/tasks`, {
+  return graphFetch<TodoTask>(token, `/me/todo/lists/${seg(listId)}/tasks`, {
     method: "POST",
     body: JSON.stringify(bodyFor(input)),
   });
@@ -108,7 +116,7 @@ export function completeTodoTask(
   listId: string,
   taskId: string,
 ): Promise<TodoTask> {
-  return graphFetch<TodoTask>(token, `/me/todo/lists/${listId}/tasks/${taskId}`, {
+  return graphFetch<TodoTask>(token, `/me/todo/lists/${seg(listId)}/tasks/${seg(taskId)}`, {
     method: "PATCH",
     body: JSON.stringify({ status: "completed" }),
   });
@@ -119,7 +127,7 @@ export function deleteTodoTask(
   listId: string,
   taskId: string,
 ): Promise<void> {
-  return graphFetch<void>(token, `/me/todo/lists/${listId}/tasks/${taskId}`, {
+  return graphFetch<void>(token, `/me/todo/lists/${seg(listId)}/tasks/${seg(taskId)}`, {
     method: "DELETE",
   });
 }
