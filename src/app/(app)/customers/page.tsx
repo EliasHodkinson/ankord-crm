@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Plus } from "lucide-react";
-import { and, asc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
 import { PageBody, PageHeader } from "@/components/app/page-header";
 import { ButtonLink } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
@@ -31,15 +31,19 @@ export const dynamic = "force-dynamic";
 export default async function CustomersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; q?: string }>;
+  searchParams: Promise<{ status?: string; kind?: string; q?: string }>;
 }) {
   const { user } = await requireUser();
-  const { status, q } = await searchParams;
+  const { status, kind, q } = await searchParams;
   const db = getDb();
 
   const filters: SQL[] = [];
   if (status && status !== "all") {
     filters.push(eq(customers.status, status as "active"));
+  }
+  if (kind === "customer" || kind === "supplier") {
+    // A record marked "both" is genuinely both, so it belongs in either list.
+    filters.push(inArray(customers.kind, [kind, "both"]));
   }
   if (q) {
     filters.push(
@@ -74,7 +78,7 @@ export default async function CustomersPage({
     <>
       <PageHeader
         title="Customers"
-        description="Every business Ankor'd works for, the people inside them, and what's running right now."
+        description="Every business Ankor'd works with — customers, suppliers, the people inside them, and what's running right now."
         meta={
           <p className="text-[13px] text-[var(--text-muted)]">
             <span className="font-semibold text-[var(--text)]">
@@ -98,6 +102,16 @@ export default async function CustomersPage({
           searchPlaceholder="Search customers…"
           filters={[
             {
+              param: "kind",
+              label: "Relationship",
+              defaultValue: "all",
+              options: [
+                { value: "all", label: "Customers & suppliers" },
+                { value: "customer", label: "Customers" },
+                { value: "supplier", label: "Suppliers" },
+              ],
+            },
+            {
               param: "status",
               label: "Status",
               defaultValue: "all",
@@ -118,11 +132,11 @@ export default async function CustomersPage({
           <div className="rounded-[10px] border border-[var(--border)] bg-[var(--surface)]">
             <EmptyState
               title={
-                q || status ? "No customers match that" : "No customers yet"
+                q || status || kind ? "Nothing matches that" : "No customers yet"
               }
               description={
-                q || status
-                  ? "Try a different status, or clear the search."
+                q || status || kind
+                  ? "Try a different relationship or status, or clear the search."
                   : "Add a business Ankor'd works for. You can also convert a won lead, which brings its contact and history across."
               }
               action={
@@ -183,11 +197,20 @@ export default async function CustomersPage({
                           ) : null}
                         </Td>
                         <Td>
-                          <StatusBadge
-                            map={CUSTOMER_STATUS}
-                            value={row.customer.status}
-                            dot
-                          />
+                          <span className="flex flex-wrap items-center gap-1.5">
+                            <StatusBadge
+                              map={CUSTOMER_STATUS}
+                              value={row.customer.status}
+                              dot
+                            />
+                            {row.customer.kind !== "customer" ? (
+                              <Badge tone="neutral">
+                                {row.customer.kind === "supplier"
+                                  ? "Supplier"
+                                  : "Both"}
+                              </Badge>
+                            ) : null}
+                          </span>
                         </Td>
                         <Td className="text-[var(--text-muted)]">
                           {row.customer.industry ?? "—"}
