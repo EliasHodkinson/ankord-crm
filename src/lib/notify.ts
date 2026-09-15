@@ -102,20 +102,41 @@ function buildCard(input: Notification) {
   };
 }
 
-/** Fire-and-forget. Resolves whether or not the post succeeded. */
-export async function notifyTeams(input: Notification): Promise<void> {
+export type NotifyResult = { ok: boolean; detail: string };
+
+/**
+ * Never throws. Real notifications ignore the result — a missed card must not
+ * surface as a failed user action — but the result is returned so the test
+ * button in Settings can say what actually happened.
+ */
+export async function notifyTeams(input: Notification): Promise<NotifyResult> {
   const webhook = process.env.TEAMS_WEBHOOK_URL;
-  if (!webhook) return;
+  if (!webhook) return { ok: false, detail: "no webhook configured" };
 
   try {
-    await fetch(webhook, {
+    const res = await fetch(webhook, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(buildCard(input)),
       signal: AbortSignal.timeout(TIMEOUT_MS),
       cache: "no-store",
     });
-  } catch {
-    /* A missed notification must never surface as a failed user action. */
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      return {
+        ok: false,
+        detail: `${res.status} ${res.statusText}${body ? ` — ${body.slice(0, 160)}` : ""}`,
+      };
+    }
+    return { ok: true, detail: `${res.status}` };
+  } catch (error) {
+    return {
+      ok: false,
+      detail:
+        error instanceof Error && error.name === "TimeoutError"
+          ? `no response within ${TIMEOUT_MS / 1000}s`
+          : "the request failed",
+    };
   }
 }

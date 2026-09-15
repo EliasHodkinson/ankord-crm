@@ -7,6 +7,8 @@ import { getDb } from "@/lib/db";
 import { settings, users } from "@/lib/db/schema";
 import { requireAdmin } from "@/lib/auth/session";
 import { disconnectXero } from "@/lib/xero/auth";
+import { notifyTeams, teamsNotificationsConfigured } from "@/lib/notify";
+import { appUrl } from "@/lib/env";
 import {
   emptyToNull,
   fail,
@@ -132,4 +134,49 @@ export async function disconnectXeroAction(): Promise<ActionState> {
 
   revalidatePath("/settings");
   return { ok: true, message: "Xero disconnected." };
+}
+
+/**
+ * Posts a card to the configured Teams webhook so the connection can be
+ * checked without waiting for a lead to reach Proposal.
+ *
+ * Reports the failure rather than swallowing it, unlike real notifications —
+ * the whole point here is to find out what is wrong.
+ */
+export async function sendTestNotification(toSelf: boolean): Promise<ActionState> {
+  const { user } = await requireAdmin();
+
+  if (!teamsNotificationsConfigured()) {
+    return fail(
+      "No TEAMS_WEBHOOK_URL is set on this deployment. Add it in Vercel and redeploy.",
+    );
+  }
+
+  const delivered = await notifyTeams({
+    title: "Test from The Gangway",
+    subtitle: toSelf
+      ? "If you can read this as a direct message, the flow's condition branch works."
+      : "If you can read this in the channel, notifications are working.",
+    tone: "good",
+    facts: [
+      { title: "Sent by", value: user.name },
+      { title: "Route", value: toSelf ? "Direct message" : "Channel" },
+    ],
+    url: appUrl(),
+    urlLabel: "Open The Gangway",
+    ...(toSelf ? { toEmail: user.email } : {}),
+  });
+
+  if (!delivered.ok) {
+    return fail(
+      `Teams did not accept the card: ${delivered.detail}. Check the webhook URL, and that the flow is turned on in Power Automate.`,
+    );
+  }
+
+  return {
+    ok: true,
+    message: toSelf
+      ? "Sent as a direct message. If nothing arrives, the flow has no condition branch for `to` yet."
+      : "Sent to the channel. It should appear within a few seconds.",
+  };
 }

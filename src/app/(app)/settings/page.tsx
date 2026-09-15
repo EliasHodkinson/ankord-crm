@@ -7,12 +7,14 @@ import { DataRow } from "@/components/ui/field";
 import { LibraryPicker } from "./library-picker";
 import { TeamTable } from "./team-table";
 import { XeroPanel } from "./xero-panel";
+import { TeamsPanel } from "./teams-panel";
 import { getDb } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { getSettings } from "@/lib/data/common";
 import { readLibraries } from "@/lib/data/files";
 import { readXeroConnection } from "@/lib/xero/auth";
 import { xeroConfigured } from "@/lib/xero/config";
+import { teamsNotificationsConfigured } from "@/lib/notify";
 import { requireUser } from "@/lib/auth/session";
 import { GRAPH_SCOPES } from "@/lib/auth/entra";
 import { appUrl, redirectUri } from "@/lib/env";
@@ -158,6 +160,24 @@ export default async function SettingsPage({
                 ) : (
                   "An administrator needs to connect a SharePoint document library before files can be stored against customers and projects."
                 )}
+              </p>
+            )}
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader
+            title="Teams notifications"
+            meta="Cards for a lead reaching Proposal, a project going off track, and follow-ups assigned to someone"
+          />
+          <CardBody>
+            {isAdmin ? (
+              <TeamsPanel configured={teamsNotificationsConfigured()} />
+            ) : (
+              <p className="text-[13px] text-[var(--text-muted)]">
+                {teamsNotificationsConfigured()
+                  ? "Notifications are switched on."
+                  : "Not configured. An administrator can set this up."}
               </p>
             )}
           </CardBody>
