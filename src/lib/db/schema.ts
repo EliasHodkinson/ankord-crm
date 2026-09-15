@@ -605,6 +605,12 @@ export const tasks = pgTable(
     projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }),
     leadId: uuid("lead_id").references(() => leads.id, { onDelete: "cascade" }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
+    /**
+     * The mirrored task in the assignee's Microsoft To Do, if it has been
+     * synced. Set only by that person's own sync — To Do cannot be written on
+     * someone else's behalf.
+     */
+    todoTaskId: text("todo_task_id"),
     createdById: uuid("created_by_id").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

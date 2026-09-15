@@ -4,6 +4,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { FilterBar } from "@/components/app/filter-bar";
 import { QuickTask } from "@/components/app/quick-task";
 import { TaskList, type TaskItem } from "@/components/app/task-list";
+import { TodoSync } from "@/components/app/todo-sync";
 import { listTasks } from "@/lib/data/tasks";
 import { listTeam } from "@/lib/data/common";
 import { requireUser } from "@/lib/auth/session";
@@ -102,6 +103,10 @@ export default async function TasksPage({
           emptyTitle={who === "everyone" ? "The team is clear" : "You're all clear"}
           emptyDescription="Set a follow-up from a lead, a customer or a project and it will show up here, grouped by when it's due."
         />
+
+        {/* Only ever syncs the signed-in person's own list, so it is hidden
+            when looking at the whole team's follow-ups. */}
+        {who !== "everyone" ? <TodoSync /> : null}
       </PageBody>
     </>
   );

@@ -16,6 +16,10 @@ export const GRAPH_SCOPES = [
   "User.ReadBasic.All",
   "Mail.Read",
   "Sites.ReadWrite.All",
+  // Mirroring follow-ups into the signed-in person's Microsoft To Do. There is
+  // no application-permission path for To Do — /me/todo is delegated only — so
+  // each person's list is only ever written with their own token.
+  "Tasks.ReadWrite",
 ] as const;
 
 export const SCOPE_STRING = GRAPH_SCOPES.join(" ");

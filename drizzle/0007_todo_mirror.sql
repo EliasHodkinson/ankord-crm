@@ -1,0 +1,1 @@
+ALTER TABLE "tasks" ADD COLUMN "todo_task_id" text;
