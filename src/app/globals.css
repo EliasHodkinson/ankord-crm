@@ -1,26 +1,304 @@
 @import "tailwindcss";
 
+/* ══════════════════════════════════════════════════════════════════
+   Ankor'd design system
+   Palette and type taken from "Ankor'd Complete Brand Guidelines".
+   Primary   White #ffffff · Sunrise #d2691e · Deep Coastal #08393a
+   Secondary Sea Mist #a8bdb8 · Coastal Teal #2e7a78 · Charcoal Ink #1c2826
+   ══════════════════════════════════════════════════════════════════ */
+
+@theme {
+  /* Brand ramps ------------------------------------------------- */
+  --color-coastal-50:  #eef4f4;
+  --color-coastal-100: #d6e4e3;
+  --color-coastal-200: #a8bdb8;   /* Sea Mist */
+  --color-coastal-300: #7ba3a0;
+  --color-coastal-400: #4d8a87;
+  --color-coastal-500: #2e7a78;   /* Coastal Teal */
+  --color-coastal-600: #206160;
+  --color-coastal-700: #14494a;
+  --color-coastal-800: #08393a;   /* Deep Coastal */
+  --color-coastal-900: #052728;
+  --color-coastal-950: #031b1c;
+
+  --color-sunrise-50:  #fdf4ed;
+  --color-sunrise-100: #fae3d0;
+  --color-sunrise-200: #f4c39c;
+  --color-sunrise-300: #eda168;
+  --color-sunrise-400: #e2833f;
+  --color-sunrise-500: #d2691e;   /* Sunrise */
+  --color-sunrise-600: #b25517;
+  --color-sunrise-700: #8d4213;
+  --color-sunrise-800: #683110;
+  --color-sunrise-900: #47220c;
+
+  --color-ink-500: #5b6b69;
+  --color-ink-700: #334543;
+  --color-ink-900: #1c2826;       /* Charcoal Ink */
+
+  --font-sans: var(--font-figtree), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+
+  --radius-brand: 0.625rem;
+}
+
+/* Semantic tokens — light ---------------------------------------- */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg:          #f4f7f6;
+  --surface:     #ffffff;
+  --surface-2:   #f7faf9;
+  --surface-3:   #eef3f2;
+  --border:      #dde6e4;
+  --border-soft: #e9efee;
+  --text:        #1c2826;
+  --text-muted:  #5b6b69;
+  --text-faint:  #5f706d;
+  --brand:       #08393a;
+  --brand-fg:    #ffffff;
+  /* Sunrise 600 rather than Sunrise 500: the pure brand orange only reaches
+     3.6:1 against white, so text and text-bearing fills step one shade down
+     while the pure hue stays on non-text marks. */
+  --accent:      #b25517;
+  --accent-fg:   #ffffff;
+  --accent-mark: #d2691e;
+  --accent-hover:  #8d4213;
+  --accent-active: #683110;
+  --ring:        #2e7a78;
+
+  --nav-bg:      #08393a;
+  --nav-fg:      #d6e4e3;
+  --nav-fg-dim:  #7ba3a0;
+  --nav-active:  #0d4a4b;
+  --nav-border:  #0f4c4d;
+
+  --ok:      #1f7a52;
+  --ok-bg:   #e6f4ec;
+  --warn:    #9a6206;
+  --warn-bg: #fdf3e0;
+  --danger:  #a32f2f;
+  --danger-bg:#fbeceb;
+  --info:    #206160;
+  --info-bg: #e4f0ef;
+
+
+  /* Charts — an ordinal Coastal ramp for funnel stages, more = darker.
+     Every step clears 3:1 against the light surface. */
+  --chart-1: #5e938f;
+  --chart-2: #4d8a87;
+  --chart-3: #3d8280;
+  --chart-4: #2e7a78;
+  --chart-5: #276e6c;
+  --chart-6: #206160;
+  --chart-series: #206160;
+  --chart-grid: #e4ebe9;
+  --chart-track: #eef3f2;
+
+  --shadow-sm: 0 1px 2px rgb(8 57 58 / 0.06);
+  --shadow-md: 0 2px 4px -1px rgb(8 57 58 / 0.07), 0 4px 12px -2px rgb(8 57 58 / 0.06);
+  --shadow-lg: 0 8px 24px -6px rgb(8 57 58 / 0.14), 0 2px 6px -2px rgb(8 57 58 / 0.08);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
+/* Semantic tokens — dark ----------------------------------------- */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  :root:not([data-theme="light"]) {
+    --bg:          #071312;
+    --surface:     #0d1c1b;
+    --surface-2:   #112322;
+    --surface-3:   #162c2a;
+    --border:      #1d3835;
+    --border-soft: #172d2b;
+    --text:        #e6eeec;
+    --text-muted:  #9ab0ac;
+    --text-faint:  #7b918e;
+    --brand:       #2e7a78;
+    --brand-fg:    #ffffff;
+    --accent:      #e2833f;
+    --accent-fg:   #1c2826;
+    --accent-mark: #e2833f;
+    --accent-hover:  #eda168;
+    --accent-active: #f4c39c;
+    --ring:        #4d8a87;
+
+    /* The rail keeps Deep Coastal in both themes — it is the brand's own
+       panel colour, and against a near-black page it still reads as a panel. */
+    --nav-bg:      #08393a;
+    --nav-fg:      #d6e4e3;
+    --nav-fg-dim:  #8fb0ad;
+    --nav-active:  #0f4c4d;
+    --nav-border:  #0c4344;
+
+    --ok:      #58c48d;  --ok-bg:   #0d2a1f;
+    --warn:    #e0a33f;  --warn-bg: #2b2110;
+    --danger:  #e88b84;  --danger-bg:#301715;
+    --info:    #6fb5b2;  --info-bg: #0e2827;
+
+
+    /* Charts — the dark mode is chosen, not flipped: the same Coastal ramp
+       anchored the other way, each step ≥3:1 against the dark surface. */
+    --chart-1: #3d8280;
+    --chart-2: #4d8a87;
+    --chart-3: #5e938f;
+    --chart-4: #6d9c99;
+    --chart-5: #8fb0ad;
+    --chart-6: #c0d0cd;
+    --chart-series: #6d9c99;
+    --chart-grid: #1d3835;
+    --chart-track: #162c2a;
+
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-md: 0 2px 4px -1px rgb(0 0 0 / 0.45), 0 4px 12px -2px rgb(0 0 0 / 0.4);
+    --shadow-lg: 0 8px 24px -6px rgb(0 0 0 / 0.6), 0 2px 6px -2px rgb(0 0 0 / 0.45);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+:root[data-theme="dark"] {
+  --bg:          #071312;
+  --surface:     #0d1c1b;
+  --surface-2:   #112322;
+  --surface-3:   #162c2a;
+  --border:      #1d3835;
+  --border-soft: #172d2b;
+  --text:        #e6eeec;
+  --text-muted:  #9ab0ac;
+  --text-faint:  #7b918e;
+  --brand:       #2e7a78;
+  --brand-fg:    #ffffff;
+  --accent:      #e2833f;
+  --accent-fg:   #1c2826;
+  --accent-mark: #e2833f;
+  --accent-hover:  #eda168;
+  --accent-active: #f4c39c;
+  --ring:        #4d8a87;
+
+  --nav-bg:      #08393a;
+  --nav-fg:      #d6e4e3;
+  --nav-fg-dim:  #8fb0ad;
+  --nav-active:  #0f4c4d;
+  --nav-border:  #0c4344;
+
+  --ok:      #58c48d;  --ok-bg:   #0d2a1f;
+  --warn:    #e0a33f;  --warn-bg: #2b2110;
+  --danger:  #e88b84;  --danger-bg:#301715;
+  --info:    #6fb5b2;  --info-bg: #0e2827;
+
+
+  /* Charts — the dark mode is chosen, not flipped: the same Coastal ramp
+     anchored the other way, each step ≥3:1 against the dark surface. */
+  --chart-1: #3d8280;
+  --chart-2: #4d8a87;
+  --chart-3: #5e938f;
+  --chart-4: #6d9c99;
+  --chart-5: #8fb0ad;
+  --chart-6: #c0d0cd;
+  --chart-series: #6d9c99;
+  --chart-grid: #1d3835;
+  --chart-track: #162c2a;
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-md: 0 2px 4px -1px rgb(0 0 0 / 0.45), 0 4px 12px -2px rgb(0 0 0 / 0.4);
+  --shadow-lg: 0 8px 24px -6px rgb(0 0 0 / 0.6), 0 2px 6px -2px rgb(0 0 0 / 0.45);
+}
+
+/* Expose semantic tokens as Tailwind utilities -------------------- */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--border);
+  --color-line-soft: var(--border-soft);
+  --color-body: var(--text);
+  --color-muted: var(--text-muted);
+  --color-faint: var(--text-faint);
+  --color-brand: var(--brand);
+  --color-brand-fg: var(--brand-fg);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-mark: var(--accent-mark);
+  --color-nav: var(--nav-bg);
+  --color-nav-fg: var(--nav-fg);
+  --color-nav-dim: var(--nav-fg-dim);
+  --color-nav-active: var(--nav-active);
+  --color-nav-line: var(--nav-border);
+  --color-ok: var(--ok);
+  --color-ok-bg: var(--ok-bg);
+  --color-warn: var(--warn);
+  --color-warn-bg: var(--warn-bg);
+  --color-danger: var(--danger);
+  --color-danger-bg: var(--danger-bg);
+  --color-info: var(--info);
+  --color-info-bg: var(--info-bg);
+}
+
+@layer base {
+  * { border-color: var(--border); }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    scrollbar-gutter: stable;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Brand type hierarchy: tight tracking on display sizes, per guidelines */
+  h1, h2, h3, h4 { letter-spacing: -0.025em; font-weight: 600; }
+  h1 { letter-spacing: -0.03em; }
+
+  ::selection { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  input, textarea, select, button { font: inherit; }
+
+  input::placeholder, textarea::placeholder { color: var(--text-faint); }
+
+  /* Native controls follow the theme */
+  :root { color-scheme: light; }
+  :root[data-theme="dark"] { color-scheme: dark; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { color-scheme: dark; }
+  }
+}
+
+@layer utilities {
+  /* The brand's repeating emblem pattern, used sparingly as a wash */
+  .bg-brand-weave {
+    background-image:
+      linear-gradient(135deg, transparent 45%, color-mix(in srgb, var(--accent) 9%, transparent) 45% 55%, transparent 55%),
+      linear-gradient(45deg, transparent 45%, color-mix(in srgb, var(--brand) 7%, transparent) 45% 55%, transparent 55%);
+    background-size: 34px 34px;
+  }
+
+  .scrollbar-slim {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .scrollbar-slim::-webkit-scrollbar { width: 8px; height: 8px; }
+  .scrollbar-slim::-webkit-scrollbar-thumb {
+    background: var(--border); border-radius: 99px;
+  }
+  .scrollbar-slim::-webkit-scrollbar-track { background: transparent; }
+
+  .tabular { font-variant-numeric: tabular-nums; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

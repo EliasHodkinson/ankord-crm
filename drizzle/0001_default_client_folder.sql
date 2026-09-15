@@ -1,0 +1,1 @@
+ALTER TABLE "settings" ALTER COLUMN "sp_root_folder" SET DEFAULT 'The Gangway';
