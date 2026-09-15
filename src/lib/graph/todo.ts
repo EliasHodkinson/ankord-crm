@@ -73,22 +73,22 @@ export type TodoPayload = {
 };
 
 function bodyFor(input: TodoPayload) {
+  /**
+   * The link goes in the body rather than in `linkedResources`.
+   *
+   * linkedResources is a relationship, not a plain field, and setting it inline
+   * on create is rejected outright — Graph answers a bare "Invalid request".
+   * Creating it needs a second call against the new task, which is another
+   * round trip per follow-up and another thing to fail halfway. A URL in the
+   * body is rendered as a link by every To Do client and costs nothing.
+   */
+  const body = [input.detail, input.url].filter(Boolean).join("\n\n");
+
   return {
     title: input.title,
     importance: importanceFor(input.priority),
-    ...(input.detail
-      ? { body: { content: input.detail, contentType: "text" } }
-      : {}),
+    body: { content: body, contentType: "text" },
     ...(dueFor(input.dueDate) ? { dueDateTime: dueFor(input.dueDate) } : {}),
-    // Shows in To Do as a link straight back to the record, so the task is
-    // actionable from there rather than just a reminder to open the CRM.
-    linkedResources: [
-      {
-        webUrl: input.url,
-        applicationName: "The Gangway",
-        displayName: input.title,
-      },
-    ],
   };
 }
 

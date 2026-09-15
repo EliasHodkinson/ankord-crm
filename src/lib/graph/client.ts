@@ -53,9 +53,24 @@ export async function graphFetch<T>(
     let code = `http_${res.status}`;
     let message = res.statusText;
     try {
-      const body = (await res.json()) as { error?: { code?: string; message?: string } };
+      const body = (await res.json()) as {
+        error?: {
+          code?: string;
+          message?: string;
+          innerError?: { message?: string; code?: string };
+        };
+      };
       code = body.error?.code ?? code;
       message = body.error?.message ?? message;
+
+      /**
+       * Graph answers a malformed body with a bare "Invalid request" and puts
+       * what was actually wrong in innerError. Without this the message names
+       * the symptom and nothing else, which is useless when the request is
+       * built in code and cannot be inspected by hand.
+       */
+      const inner = body.error?.innerError?.message ?? body.error?.innerError?.code;
+      if (inner && inner !== message) message = `${message} (${inner})`;
     } catch {
       /* non-JSON error body */
     }
