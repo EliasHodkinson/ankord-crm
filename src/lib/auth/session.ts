@@ -93,10 +93,21 @@ export async function createSession(userId: string, tokens: TokenSet): Promise<v
     })
     .returning({ id: sessions.id });
 
+  /**
+   * Inside a Microsoft Teams tab the app is framed, so the session cookie is a
+   * third-party cookie: SameSite=Lax would not be sent and everyone would look
+   * permanently signed out. SameSite=None fixes that, and browsers only accept
+   * it on a Secure cookie — so local http development keeps Lax.
+   *
+   * The CSRF exposure that None would normally open is covered by Next.js
+   * server actions, which verify the request Origin against the host.
+   */
+  const framed = process.env.NODE_ENV === "production";
+
   (await cookies()).set(SESSION_COOKIE, await signCookie(row.id), {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    secure: framed,
+    sameSite: framed ? "none" : "lax",
     path: "/",
     expires: expiresAt,
   });

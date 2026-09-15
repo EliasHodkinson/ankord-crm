@@ -8,6 +8,9 @@ import { getDb } from "@/lib/db";
 import { customers, contacts, leads } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth/session";
 import { autoProvisionFolder } from "./files";
+import { notifyTeams } from "@/lib/notify";
+import { appUrl } from "@/lib/env";
+import { money } from "@/lib/utils";
 import {
   emptyToNull,
   fail,
@@ -130,16 +133,47 @@ export async function updateLead(
   return { ok: true, message: "Saved." };
 }
 
+/** Announces a lead reaching Proposal. Never throws — see lib/notify.ts. */
+async function notifyLeadProposal(
+  id: string,
+  companyName: string,
+  valueAud: string | null,
+): Promise<void> {
+  await notifyTeams({
+    title: `${companyName} reached Proposal`,
+    subtitle: "A proposal is now with them. Worth agreeing who chases it and when.",
+    tone: "good",
+    facts: [
+      { title: "Lead", value: companyName },
+      ...(valueAud ? [{ title: "Value", value: money(valueAud) ?? valueAud }] : []),
+    ],
+    url: `${appUrl()}/leads/${id}`,
+    urlLabel: "Open the lead",
+  });
+}
+
 /** Stage moves happen constantly, so they get their own one-click path. */
 export async function setLeadStage(id: string, stage: string): Promise<ActionState> {
   await requireUser();
   const value = z.enum(STAGES).safeParse(stage);
   if (!value.success) return fail("Unknown stage.");
 
-  await getDb()
+  const db = getDb();
+  const [before] = await db
+    .select({ stage: leads.stage, companyName: leads.companyName, valueAud: leads.valueAud })
+    .from(leads)
+    .where(eq(leads.id, id))
+    .limit(1);
+
+  await db
     .update(leads)
     .set({ stage: value.data, updatedAt: new Date() })
     .where(eq(leads.id, id));
+
+  // Only on the way in — re-saving the same stage should not re-announce it.
+  if (before && before.stage !== value.data && value.data === "proposal") {
+    await notifyLeadProposal(id, before.companyName, before.valueAud);
+  }
 
   await touchRecords({ leadId: id });
 
@@ -287,6 +321,12 @@ export async function moveLeadOnBoard(
       summary: `Moved ${current.companyName} to ${labelFor(LEAD_STAGES, parsed.data)}`,
       meta: { stage: parsed.data },
     });
+
+    // Dragging a card on the board is the same event as picking the stage on
+    // the record, so it announces the same way.
+    if (parsed.data === "proposal") {
+      await notifyLeadProposal(id, current.companyName, null);
+    }
   }
 
   revalidatePath("/leads");

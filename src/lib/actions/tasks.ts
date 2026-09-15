@@ -4,7 +4,9 @@ import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/lib/db";
-import { tasks } from "@/lib/db/schema";
+import { tasks, users } from "@/lib/db/schema";
+import { notifyTeams } from "@/lib/notify";
+import { appUrl } from "@/lib/env";
 import { requireUser } from "@/lib/auth/session";
 import {
   fail,
@@ -58,9 +60,69 @@ export async function createTask(
     summary: `Added follow-up: ${values.title}`,
   });
 
+  // Tell the assignee in Teams, unless they set it for themselves — nobody
+  // needs a notification about a note they just wrote.
+  const assigneeId = values.assigneeId ?? user.id;
+  if (assigneeId !== user.id) {
+    await notifyAssignee(assigneeId, user.name, values);
+  }
+
   revalidatePath(revalidate);
   revalidatePath("/tasks");
   return { ok: true, message: "Follow-up set." };
+}
+
+/**
+ * Direct-messages the person a follow-up was assigned to, with a brief and a
+ * link straight to the record it belongs to.
+ *
+ * Delivered by a Power Automate flow acting as Flow bot, so it arrives from
+ * Flow bot rather than from The Gangway — the card carries the name instead.
+ * Rebranding the sender would need a registered Teams bot.
+ */
+async function notifyAssignee(
+  assigneeId: string,
+  assignedBy: string,
+  values: {
+    title: string;
+    detail: string | null;
+    dueDate: string | null;
+    priority: string;
+    customerId: string | null;
+    projectId: string | null;
+    leadId: string | null;
+  },
+): Promise<void> {
+  const [assignee] = await getDb()
+    .select({ email: users.email, name: users.name })
+    .from(users)
+    .where(eq(users.id, assigneeId))
+    .limit(1);
+  if (!assignee?.email) return;
+
+  // Land them on the record the follow-up is about, not a generic task list.
+  const target = values.projectId
+    ? `/projects/${values.projectId}`
+    : values.customerId
+      ? `/customers/${values.customerId}`
+      : values.leadId
+        ? `/leads/${values.leadId}`
+        : "/tasks";
+
+  await notifyTeams({
+    toEmail: assignee.email,
+    title: `${assignedBy} assigned you a follow-up`,
+    subtitle: values.title,
+    tone: values.priority === "urgent" ? "attention" : "default",
+    facts: [
+      ...(values.detail ? [{ title: "Detail", value: values.detail }] : []),
+      { title: "Due", value: values.dueDate ?? "No date set" },
+      { title: "Priority", value: values.priority },
+      { title: "Set by", value: assignedBy },
+    ],
+    url: `${appUrl()}${target}`,
+    urlLabel: "Open it in The Gangway",
+  });
 }
 
 /** The parts of a follow-up worth changing after the fact. */

@@ -9,6 +9,8 @@ import { projectContacts, projectPhases, projectSteps, projects } from "@/lib/db
 import { requireUser } from "@/lib/auth/session";
 import { findTemplate } from "@/lib/templates";
 import { autoProvisionFolder } from "./files";
+import { notifyTeams } from "@/lib/notify";
+import { appUrl } from "@/lib/env";
 import {
   fail,
   fromZod,
@@ -122,7 +124,14 @@ export async function updateProject(
   const parsed = projectSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return fromZod(parsed.error);
 
-  await getDb()
+  const db = getDb();
+  const [before] = await db
+    .select({ health: projects.health, name: projects.name })
+    .from(projects)
+    .where(eq(projects.id, id))
+    .limit(1);
+
+  await db
     .update(projects)
     .set({
       ...parsed.data,
@@ -131,6 +140,22 @@ export async function updateProject(
       updatedAt: new Date(),
     })
     .where(eq(projects.id, id));
+
+  // Only on the way in — re-saving an already off-track project is not news.
+  if (before && before.health !== parsed.data.health && parsed.data.health === "off_track") {
+    await notifyTeams({
+      title: `${before.name} is off track`,
+      subtitle: parsed.data.headline ?? "Health was changed to Off Track.",
+      tone: "attention",
+      facts: [
+        { title: "Project", value: before.name },
+        { title: "Status", value: parsed.data.status },
+        ...(parsed.data.targetDate ? [{ title: "Target", value: parsed.data.targetDate }] : []),
+      ],
+      url: `${appUrl()}/projects/${id}`,
+      urlLabel: "Open the project",
+    });
+  }
 
   await logActivity({
     entityType: "project",

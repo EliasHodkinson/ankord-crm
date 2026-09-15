@@ -1,0 +1,58 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.17/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.17",
+  "version": "1.0.0",
+  "id": "e7ed7b60-aef5-4a29-a49e-4b03b6bffffe",
+  "packageName": "au.com.ankord.gangway",
+  "developer": {
+    "name": "Ankor'd Pty Ltd",
+    "websiteUrl": "https://gangway.ankord.com.au",
+    "privacyUrl": "https://gangway.ankord.com.au",
+    "termsOfUseUrl": "https://gangway.ankord.com.au"
+  },
+  "icons": {
+    "color": "color.png",
+    "outline": "outline.png"
+  },
+  "name": {
+    "short": "The Gangway",
+    "full": "The Gangway — Ankor'd CRM"
+  },
+  "description": {
+    "short": "Leads, customers, projects and the conversations that go with them.",
+    "full": "The internal Ankor'd CRM. Track leads through the pipeline, keep customers and the people inside them, run delivery projects from the runbooks, and keep every email and file where it belongs in Microsoft 365."
+  },
+  "accentColor": "#D2691E",
+  "staticTabs": [
+    {
+      "entityId": "gangway.dashboard",
+      "name": "Dashboard",
+      "contentUrl": "https://gangway.ankord.com.au/",
+      "websiteUrl": "https://gangway.ankord.com.au/",
+      "scopes": ["personal"]
+    },
+    {
+      "entityId": "gangway.leads",
+      "name": "Leads",
+      "contentUrl": "https://gangway.ankord.com.au/leads",
+      "websiteUrl": "https://gangway.ankord.com.au/leads",
+      "scopes": ["personal"]
+    },
+    {
+      "entityId": "gangway.customers",
+      "name": "Customers",
+      "contentUrl": "https://gangway.ankord.com.au/customers",
+      "websiteUrl": "https://gangway.ankord.com.au/customers",
+      "scopes": ["personal"]
+    },
+    {
+      "entityId": "gangway.tasks",
+      "name": "Follow-ups",
+      "contentUrl": "https://gangway.ankord.com.au/tasks",
+      "websiteUrl": "https://gangway.ankord.com.au/tasks",
+      "scopes": ["personal"]
+    }
+  ],
+  "permissions": ["identity"],
+  "validDomains": ["gangway.ankord.com.au"]
+}
