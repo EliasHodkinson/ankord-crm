@@ -15,8 +15,16 @@ export type TeamRow = {
   photo: string | null;
   jobTitle: string | null;
   role: "admin" | "member" | "viewer";
+  /** "entra" means the tenant owns this person's access, not this table. */
+  roleSource: "entra" | "manual";
   isActive: boolean;
   lastSeenAt: Date | null;
+};
+
+const ROLE_LABEL: Record<string, string> = {
+  admin: "Admin",
+  member: "Member",
+  viewer: "Viewer",
 };
 
 const ROLE_HINT: Record<string, string> = {
@@ -96,6 +104,18 @@ function RoleSelect({
   onError: (message: string | null) => void;
 }) {
   const [pending, start] = useTransition();
+
+  // Entra is the authority once it is assigning app roles. Showing an editable
+  // control here would promise something the next sign-in would undo.
+  if (row.roleSource === "entra") {
+    return (
+      <span className="flex items-center gap-1.5">
+        <Badge tone="neutral">{ROLE_LABEL[row.role] ?? row.role}</Badge>
+        <span className="text-[11px] text-[var(--text-faint)]">via Entra</span>
+      </span>
+    );
+  }
+
   return (
     <Select
       aria-label={`Access level for ${row.name}`}

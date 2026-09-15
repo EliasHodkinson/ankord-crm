@@ -5,6 +5,7 @@ import { createSession, verifyIdToken } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { fetchMyPhotoDataUri, fetchMyProfile } from "@/lib/graph/client";
+import { roleFromClaims } from "@/lib/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +52,12 @@ export async function GET(request: NextRequest) {
     // Match on the Entra object id first; fall back to the address so a row
     // created before this person's first sign-in is adopted rather than
     // colliding with the unique email index.
+    // Entra owns the role once app roles exist on the registration. A token
+    // with no roles claim yields null, which leaves whatever role is already on
+    // the record alone rather than downgrading anyone — so this is safe to ship
+    // before the roles are configured in the tenant.
+    const entraRole = roleFromClaims(claims.roles);
+
     const [existing] = await db
       .select({ id: users.id })
       .from(users)
@@ -67,6 +74,7 @@ export async function GET(request: NextRequest) {
           name,
           jobTitle: profile?.jobTitle ?? null,
           ...(photo ? { photo } : {}),
+          ...(entraRole ? { role: entraRole, roleSource: "entra" as const } : {}),
           lastSeenAt: new Date(),
           updatedAt: new Date(),
         })
@@ -88,7 +96,8 @@ export async function GET(request: NextRequest) {
           name,
           jobTitle: profile?.jobTitle ?? null,
           photo,
-          role: total === 0 ? "admin" : "member",
+          role: entraRole ?? (total === 0 ? "admin" : "member"),
+          roleSource: entraRole ? "entra" : "manual",
           lastSeenAt: new Date(),
         })
         .returning({ id: users.id });

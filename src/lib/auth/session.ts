@@ -50,6 +50,11 @@ export type EntraClaims = JWTPayload & {
   name?: string;
   preferred_username?: string;
   email?: string;
+  /**
+   * App roles assigned to this person on the Ankor'd CRM registration. Absent
+   * entirely until app roles are configured in Entra — see lib/roles.ts.
+   */
+  roles?: string[];
 };
 
 export async function verifyIdToken(idToken: string): Promise<EntraClaims> {

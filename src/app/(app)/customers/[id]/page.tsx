@@ -22,6 +22,7 @@ import { RecordTasks } from "@/components/app/record-tasks";
 import { TrackVisit } from "@/components/app/track-visit";
 import { FilesPanel } from "@/components/app/files-panel";
 import { ConnectFolder } from "@/components/app/connect-folder";
+import { CheckStructure } from "@/components/app/check-structure";
 import { AccountRegister } from "@/components/app/account-register";
 import { CustomerForm } from "../customer-form";
 import { getCustomer } from "@/lib/data/customers";
@@ -283,14 +284,17 @@ export default async function CustomerPage({
             <CardHeader title="Files" meta="Stored in SharePoint" />
             <CardBody>
               {customer.spDriveId && customer.spItemId ? (
-                <FilesPanel
-                  driveId={customer.spDriveId}
-                  rootItemId={customer.spItemId}
-                  rootName={customer.name}
-                  webUrl={customer.spWebUrl}
-                  initialItems={folder.items}
-                  initialError={folder.error}
-                />
+                <>
+                  <FilesPanel
+                    driveId={customer.spDriveId}
+                    rootItemId={customer.spItemId}
+                    rootName={customer.name}
+                    webUrl={customer.spWebUrl}
+                    initialItems={folder.items}
+                    initialError={folder.error}
+                  />
+                  <CheckStructure customerId={customer.id} />
+                </>
               ) : (
                 <ConnectFolder
                   scope={{ customerId: customer.id }}

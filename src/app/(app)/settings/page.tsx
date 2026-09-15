@@ -32,6 +32,7 @@ export default async function SettingsPage() {
         photo: users.photo,
         jobTitle: users.jobTitle,
         role: users.role,
+        roleSource: users.roleSource,
         isActive: users.isActive,
         lastSeenAt: users.lastSeenAt,
       })

@@ -72,6 +72,19 @@ export async function provisionFolder(
         summary: `Connected the SharePoint folder for ${customer.name}`,
       });
 
+      // Auto-provisioning swallows its errors so a Graph problem cannot cost
+      // someone the record they just created — which would otherwise make a
+      // half-built structure invisible. Put it in the timeline instead.
+      if (structure.failed.length) {
+        await logActivity({
+          entityType: "customer",
+          entityId: customer.id,
+          customerId: customer.id,
+          verb: "files_incomplete",
+          summary: `Could not create ${structure.failed.join(", ")} in SharePoint — use "Check folder structure" to finish`,
+        });
+      }
+
       revalidatePath(`/customers/${customer.id}`);
 
       if (structure.failed.length) {

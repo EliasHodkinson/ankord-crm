@@ -75,7 +75,23 @@ export async function setUserRole(userId: string, role: string): Promise<ActionS
     return fail("You can't remove your own admin access — ask another admin to do it.");
   }
 
-  await getDb()
+  const db = getDb();
+
+  // Entra wins where it is in play. Writing here would be silently reverted at
+  // the person's next sign-in, so refuse and say where the real switch is.
+  const [target] = await db
+    .select({ roleSource: users.roleSource })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  if (target?.roleSource === "entra") {
+    return fail(
+      "This person's access is managed in Entra. Change their app role assignment there — a change made here would be overwritten at their next sign-in.",
+    );
+  }
+
+  await db
     .update(users)
     .set({ role: parsed.data, updatedAt: new Date() })
     .where(eq(users.id, userId));

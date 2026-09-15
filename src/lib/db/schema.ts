@@ -19,6 +19,13 @@ import { DEFAULT_CLIENT_FOLDER_TEXT } from "../folder-template";
 
 export const userRoleEnum = pgEnum("user_role", ["admin", "member", "viewer"]);
 
+/**
+ * Where a person's role came from. `entra` means the last sign-in carried an
+ * app-role claim, so the tenant is the authority and the in-app editor steps
+ * aside. `manual` is the pre-Entra default.
+ */
+export const roleSourceEnum = pgEnum("role_source", ["entra", "manual"]);
+
 export const leadStageEnum = pgEnum("lead_stage", [
   "new",
   "contacted",
@@ -101,6 +108,8 @@ export const users = pgTable(
     /** Base64 data URI of the Graph profile photo, refreshed on sign-in. */
     photo: text("photo"),
     role: userRoleEnum("role").notNull().default("member"),
+    /** A cache of the last Entra app-role claim — see roleSourceEnum. */
+    roleSource: roleSourceEnum("role_source").notNull().default("manual"),
     isActive: boolean("is_active").notNull().default(true),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
