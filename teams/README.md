@@ -70,24 +70,33 @@ it as `TEAMS_WEBHOOK_URL` in the Vercel project.
 
 With no URL set, notifications are silently off — nothing errors.
 
-### Make it handle direct messages too
+### Add direct messages — a second flow
 
-The CRM sends one payload shape for everything. Direct messages carry a `to`
-field holding the assignee's address; channel posts send `to: null`.
+Routing by recipient inside one flow means a condition and moving actions
+between branches. Two flows is easier and each does exactly one thing.
 
-In the flow, add a **Condition** on `triggerBody()?['to']`:
+Create a second flow the same way — **⋯ → Workflows → "Post to a channel when a
+webhook request is received"** — then open it in
+[Power Automate](https://make.powerautomate.com) and change its posting action:
 
-| Branch | Action |
+| Field | Set it to |
 |---|---|
-| `to` is empty | **Post card in a chat or channel** → *Post as* **Flow bot**, *Post in* **Channel** |
-| `to` has a value | **Post card in a chat or channel** → *Post as* **Flow bot**, *Post in* **Chat with Flow bot**, *Recipient* = the `to` value |
+| Post as | **Flow bot** |
+| Post in | **Chat with Flow bot** |
+| Recipient | the expression `triggerBody()?['to']` |
 
-Pass `triggerBody()?['attachments'][0]?['content']` as the Adaptive Card in both
-branches.
+The template wraps its posting action in an **Attachments is null** condition.
+The CRM always sends attachments, so the action to change is the one in the
+**False** branch.
 
-> Direct messages arrive from **Flow bot**, not from The Gangway. Rebranding the
-> sender needs a registered Teams bot with an Azure Bot resource; the card
-> carries the name and a link instead.
+Put that flow's URL in `TEAMS_DM_WEBHOOK_URL`.
+
+> `to` will not appear in the dynamic-content list — the trigger's schema does
+> not declare it. Use the expression, which reads the raw request body.
+
+Without `TEAMS_DM_WEBHOOK_URL` set, direct messages fall back to the channel
+webhook: visible to the wrong audience beats silently lost. **Settings → Teams
+notifications** has a test button for each route.
 
 ### What gets sent
 

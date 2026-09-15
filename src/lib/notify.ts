@@ -40,6 +40,11 @@ export function teamsNotificationsConfigured(): boolean {
   return Boolean(process.env.TEAMS_WEBHOOK_URL);
 }
 
+/** Whether direct messages have somewhere of their own to go. */
+export function teamsDirectMessagesConfigured(): boolean {
+  return Boolean(process.env.TEAMS_DM_WEBHOOK_URL);
+}
+
 function buildCard(input: Notification) {
   const body: Record<string, unknown>[] = [
     {
@@ -110,7 +115,19 @@ export type NotifyResult = { ok: boolean; detail: string };
  * button in Settings can say what actually happened.
  */
 export async function notifyTeams(input: Notification): Promise<NotifyResult> {
-  const webhook = process.env.TEAMS_WEBHOOK_URL;
+  /**
+   * Two flows rather than one flow with a branch.
+   *
+   * A Workflows flow posts wherever its own action says, so routing by
+   * recipient means either a condition inside the flow or a second flow. Two
+   * flows is markedly easier to set up and each does exactly one thing.
+   *
+   * Without a DM webhook a direct message still goes to the channel — visible
+   * to the wrong audience is better than silently lost.
+   */
+  const webhook =
+    (input.toEmail ? process.env.TEAMS_DM_WEBHOOK_URL : null) ??
+    process.env.TEAMS_WEBHOOK_URL;
   if (!webhook) return { ok: false, detail: "no webhook configured" };
 
   try {

@@ -14,7 +14,10 @@ import { getSettings } from "@/lib/data/common";
 import { readLibraries } from "@/lib/data/files";
 import { readXeroConnection } from "@/lib/xero/auth";
 import { xeroConfigured } from "@/lib/xero/config";
-import { teamsNotificationsConfigured } from "@/lib/notify";
+import {
+  teamsDirectMessagesConfigured,
+  teamsNotificationsConfigured,
+} from "@/lib/notify";
 import { requireUser } from "@/lib/auth/session";
 import { GRAPH_SCOPES } from "@/lib/auth/entra";
 import { appUrl, redirectUri } from "@/lib/env";
@@ -172,7 +175,10 @@ export default async function SettingsPage({
           />
           <CardBody>
             {isAdmin ? (
-              <TeamsPanel configured={teamsNotificationsConfigured()} />
+              <TeamsPanel
+                configured={teamsNotificationsConfigured()}
+                directMessages={teamsDirectMessagesConfigured()}
+              />
             ) : (
               <p className="text-[13px] text-[var(--text-muted)]">
                 {teamsNotificationsConfigured()

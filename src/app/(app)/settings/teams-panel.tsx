@@ -10,12 +10,19 @@ import { sendTestNotification } from "@/lib/actions/settings";
 /**
  * Checks the Teams webhook without waiting for a lead to reach Proposal.
  *
- * Two buttons because the two routes fail for different reasons: the channel
- * post works as soon as the Workflows template is created, but a direct message
- * only works once someone has added a condition branch on `to` inside Power
- * Automate — which the template does not do for you.
+ * Two buttons because the two routes are two different flows. The channel flow
+ * is the Workflows template as it comes; direct messages need a second flow
+ * whose action posts to a chat instead. Either can be set up without the other,
+ * so each needs its own check.
  */
-export function TeamsPanel({ configured }: { configured: boolean }) {
+export function TeamsPanel({
+  configured,
+  directMessages,
+}: {
+  configured: boolean;
+  /** Whether a second flow exists for direct messages. */
+  directMessages: boolean;
+}) {
   const [pending, start] = useTransition();
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
 
@@ -43,11 +50,15 @@ export function TeamsPanel({ configured }: { configured: boolean }) {
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
         <Badge tone="ok" dot>
-          Webhook set
+          Channel
         </Badge>
-        <span className="text-[12px] text-[var(--text-muted)]">
-          Cards post through a Power Automate Workflows flow.
-        </span>
+        {directMessages ? (
+          <Badge tone="ok" dot>
+            Direct messages
+          </Badge>
+        ) : (
+          <Badge tone="warn">Direct messages go to the channel</Badge>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -80,9 +91,10 @@ export function TeamsPanel({ configured }: { configured: boolean }) {
       ) : null}
 
       <p className="text-[11px] leading-4 text-[var(--text-faint)]">
-        A channel card works as soon as the Workflows template exists. A direct
-        message needs a condition on <code className="font-mono">to</code> added
-        inside Power Automate — see teams/README.md in the repo.
+        Two flows, one each. The channel flow is the Workflows template as it
+        comes. Direct messages need a second flow whose URL goes in{" "}
+        <code className="font-mono">TEAMS_DM_WEBHOOK_URL</code>; without it they
+        fall back to the channel rather than disappearing.
       </p>
     </div>
   );

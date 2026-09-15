@@ -7,7 +7,11 @@ import { getDb } from "@/lib/db";
 import { settings, users } from "@/lib/db/schema";
 import { requireAdmin } from "@/lib/auth/session";
 import { disconnectXero } from "@/lib/xero/auth";
-import { notifyTeams, teamsNotificationsConfigured } from "@/lib/notify";
+import {
+  notifyTeams,
+  teamsDirectMessagesConfigured,
+  teamsNotificationsConfigured,
+} from "@/lib/notify";
 import { appUrl } from "@/lib/env";
 import {
   emptyToNull,
@@ -173,10 +177,18 @@ export async function sendTestNotification(toSelf: boolean): Promise<ActionState
     );
   }
 
+  if (toSelf && !teamsDirectMessagesConfigured()) {
+    return {
+      ok: true,
+      message:
+        "Sent — but to the channel, because no TEAMS_DM_WEBHOOK_URL is set. Create the direct-message flow and add its URL to see this arrive as a chat.",
+    };
+  }
+
   return {
     ok: true,
     message: toSelf
-      ? "Sent as a direct message. If nothing arrives, the flow has no condition branch for `to` yet."
+      ? "Sent as a direct message. Check your Teams chat with Flow bot."
       : "Sent to the channel. It should appear within a few seconds.",
   };
 }
