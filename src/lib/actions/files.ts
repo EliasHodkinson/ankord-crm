@@ -6,7 +6,8 @@ import { getDb } from "@/lib/db";
 import { customers, projects } from "@/lib/db/schema";
 import { getGraphToken, requireUser } from "@/lib/auth/session";
 import { getSettings } from "@/lib/data/common";
-import { ensureFolderPath } from "@/lib/graph/sharepoint";
+import { ensureChildFolders, ensureFolderPath } from "@/lib/graph/sharepoint";
+import { parseFolderTemplate } from "@/lib/folder-template";
 import { describeGraphFailure } from "@/lib/graph/errors";
 import { fail, logActivity, type ActionState } from "./shared";
 
@@ -46,6 +47,13 @@ export async function provisionFolder(
         customer.name,
       ]);
 
+      // The numbered client structure lives inside the customer folder. A
+      // project folder is deliberately left bare — the structure is per-client.
+      const template = parseFolderTemplate(settings.spFolderTemplate);
+      const structure = template.length
+        ? await ensureChildFolders(token, settings.spDriveId, folder.id, template)
+        : { created: [], failed: [] };
+
       await db
         .update(customers)
         .set({
@@ -65,6 +73,13 @@ export async function provisionFolder(
       });
 
       revalidatePath(`/customers/${customer.id}`);
+
+      if (structure.failed.length) {
+        return {
+          ok: true,
+          message: `SharePoint folder ready, but ${structure.failed.join(", ")} could not be created. Try again to finish the structure.`,
+        };
+      }
       return { ok: true, message: "SharePoint folder ready." };
     }
 
@@ -110,5 +125,26 @@ export async function provisionFolder(
     return { ok: true, message: "SharePoint folder ready." };
   } catch (error) {
     return fail(describeGraphFailure(error));
+  }
+}
+
+/**
+ * Provisions the folder when a record is first created, honouring the
+ * auto-provision setting — and never throwing.
+ *
+ * A SharePoint outage must not cost someone the customer they just typed in.
+ * The record is already committed by the time this runs; if provisioning
+ * fails, the record simply has no folder yet and the detail page offers
+ * "Create SharePoint folder" as the retry.
+ */
+export async function autoProvisionFolder(
+  scope: { customerId: string } | { projectId: string },
+): Promise<void> {
+  try {
+    const settings = await getSettings();
+    if (!settings?.spAutoProvision || !settings.spDriveId) return;
+    await provisionFolder(scope);
+  } catch {
+    /* Deliberately swallowed — see above. */
   }
 }

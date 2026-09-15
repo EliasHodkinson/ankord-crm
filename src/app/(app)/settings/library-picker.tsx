@@ -3,9 +3,10 @@
 import { useId, useState, useTransition } from "react";
 import { AlertTriangle, Check, Library, Loader2, Search } from "lucide-react";
 import { ActionForm, SaveIndicator, SubmitButton } from "@/components/ui/form";
-import { Field, Input, Select } from "@/components/ui/field";
+import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { CheckboxField } from "@/components/app/form-kit";
 import { saveLibrary } from "@/lib/actions/settings";
+import { DEFAULT_CLIENT_FOLDER_TEXT } from "@/lib/folder-template";
 import type { Settings } from "@/lib/db/schema";
 import { cn } from "@/lib/utils";
 
@@ -207,6 +208,21 @@ export function LibraryPicker({
         hint="Make the SharePoint folder as soon as a customer or project is created, rather than on request."
         defaultChecked={settings?.spAutoProvision ?? true}
       />
+
+      <Field
+        label="Client folder structure"
+        htmlFor={`${uid}-template`}
+        hint="One folder per line, created inside each new customer folder. Leave blank for a bare folder. Project folders are not given a structure."
+      >
+        <Textarea
+          id={`${uid}-template`}
+          name="spFolderTemplate"
+          rows={5}
+          spellCheck={false}
+          defaultValue={settings?.spFolderTemplate ?? DEFAULT_CLIENT_FOLDER_TEXT}
+          placeholder={DEFAULT_CLIENT_FOLDER_TEXT}
+        />
+      </Field>
 
       <div className="flex items-center gap-3">
         <SubmitButton disabled={!siteId || !driveId}>Save library</SubmitButton>

@@ -13,6 +13,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
+import { DEFAULT_CLIENT_FOLDER_TEXT } from "../folder-template";
 
 /* ───────────────────────── enums ───────────────────────── */
 
@@ -642,6 +643,11 @@ export const settings = pgTable("settings", {
   spRootFolder: text("sp_root_folder").default("The Gangway"),
   /** Auto-create a SharePoint folder when a customer or project is created. */
   spAutoProvision: boolean("sp_auto_provision").notNull().default(true),
+  /**
+   * The folders created inside each new client folder, one per line. Empty
+   * means a bare client folder; null means the built-in default.
+   */
+  spFolderTemplate: text("sp_folder_template").default(DEFAULT_CLIENT_FOLDER_TEXT),
 
   /* How long something can sit untouched before the CRM says something */
   staleLeadDays: integer("stale_lead_days").notNull().default(7),

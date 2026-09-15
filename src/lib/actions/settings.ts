@@ -28,6 +28,12 @@ const librarySchema = z.object({
     (v) => v === "on" || v === "true" || v === true,
     z.boolean(),
   ),
+  // One folder per line. A textarea sends \r\n, and blank is a real choice —
+  // it means the client folder is created with nothing inside it.
+  spFolderTemplate: z.preprocess(
+    (v) => (typeof v === "string" ? v.replace(/\r\n/g, "\n").trim() : ""),
+    z.string(),
+  ),
 });
 
 /** Points the CRM at the document library that holds client files. */

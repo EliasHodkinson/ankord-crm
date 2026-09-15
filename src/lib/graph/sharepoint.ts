@@ -167,6 +167,38 @@ export function createFolder(
   });
 }
 
+/**
+ * Creates a set of folders directly inside a parent that is already known,
+ * skipping any that are already there. Used for the client folder structure.
+ *
+ * One folder failing does not stop the others — a half-built structure the
+ * caller can report on beats an exception that loses the folders that did work.
+ */
+export async function ensureChildFolders(
+  token: string,
+  driveId: string,
+  parentId: string,
+  names: string[],
+): Promise<{ created: string[]; failed: string[] }> {
+  const created: string[] = [];
+  const failed: string[] = [];
+
+  for (const raw of names) {
+    const name = safeFolderName(raw);
+    if (!name) continue;
+
+    try {
+      if (await findChildByName(token, driveId, parentId, name)) continue;
+      await createFolder(token, driveId, parentId, name);
+      created.push(name);
+    } catch {
+      failed.push(name);
+    }
+  }
+
+  return { created, failed };
+}
+
 /** Simple upload — Graph accepts a single PUT up to 4 MB. */
 const SIMPLE_UPLOAD_LIMIT = 4 * 1024 * 1024;
 

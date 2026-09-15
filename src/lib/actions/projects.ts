@@ -8,6 +8,7 @@ import { getDb } from "@/lib/db";
 import { projectContacts, projectPhases, projectSteps, projects } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth/session";
 import { findTemplate } from "@/lib/templates";
+import { autoProvisionFolder } from "./files";
 import {
   fail,
   fromZod,
@@ -102,6 +103,10 @@ export async function createProject(
     verb: "created",
     summary: `Started ${parsed.data.name} from the ${template.name} template`,
   });
+
+  // Best-effort: never throws, so a SharePoint problem cannot lose the record.
+  // Must run before redirect(), which throws to unwind.
+  await autoProvisionFolder({ projectId: project.id });
 
   revalidatePath("/projects");
   revalidatePath(`/customers/${parsed.data.customerId}`);
