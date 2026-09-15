@@ -7,6 +7,7 @@ import { Field } from "@/components/ui/field";
 import { OwnerSelect } from "@/components/app/owner-select";
 import {
   AU_STATES,
+  CheckboxField,
   FormRow,
   FormSection,
   SelectField,
@@ -14,6 +15,7 @@ import {
   TextField,
 } from "@/components/app/form-kit";
 import { CUSTOMER_STATUS, optionsFor } from "@/components/ui/status";
+import { CONTACT_KINDS } from "@/lib/contact-kinds";
 import type { Customer } from "@/lib/db/schema";
 import type { TeamMember } from "@/lib/data/common";
 import type { ActionState } from "@/lib/actions/shared";
@@ -63,17 +65,6 @@ export function CustomerForm({
             placeholder="12 345 678 901"
           />
           <SelectField
-            name="kind"
-            label="Relationship"
-            id={f("kind")}
-            defaultValue={customer?.kind ?? "customer"}
-            options={[
-              { value: "customer", label: "Customer" },
-              { value: "supplier", label: "Supplier" },
-              { value: "both", label: "Customer & supplier" },
-            ]}
-          />
-          <SelectField
             name="status"
             label="Status"
             id={f("status")}
@@ -84,6 +75,26 @@ export function CustomerForm({
             <OwnerSelect id={f("ownerId")} team={team} defaultValue={customer?.ownerId} />
           </Field>
         </FormRow>
+        <fieldset className="flex flex-col gap-2">
+          <legend className="text-[12px] font-medium text-[var(--text-muted)]">
+            Relationship
+          </legend>
+          <div className="flex flex-wrap gap-x-5 gap-y-2">
+            {CONTACT_KINDS.map((k) => (
+              <CheckboxField
+                key={k.field}
+                id={f(k.field)}
+                name={k.field}
+                label={k.label}
+                hint={k.hint}
+                defaultChecked={
+                  customer ? customer[k.field] : k.field === "isCustomer"
+                }
+              />
+            ))}
+          </div>
+        </fieldset>
+
         <FormRow>
           <TextField
             name="industry"

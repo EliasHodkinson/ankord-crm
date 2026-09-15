@@ -19,11 +19,20 @@ import {
   type ActionState,
 } from "./shared";
 
+const checkbox = z.preprocess(
+  (v) => v === "on" || v === "true" || v === true,
+  z.boolean(),
+);
+
 const customerSchema = z.object({
   name: z.string().trim().min(1, "Give the customer a name."),
   legalName: optionalText,
   abn: optionalText,
-  kind: z.enum(["customer", "supplier", "both"]).default("customer"),
+  // An unchecked checkbox is absent from FormData, not "false", so absence has
+  // to mean false rather than fail validation.
+  isCustomer: checkbox,
+  isSupplier: checkbox,
+  isMedia: checkbox,
   status: z.enum(["prospect", "active", "on_hold", "former"]),
   industry: optionalText,
   segment: optionalText,

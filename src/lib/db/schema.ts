@@ -36,17 +36,6 @@ export const leadStageEnum = pgEnum("lead_stage", [
   "lost",
 ]);
 
-/**
- * What an organisation is to Ankor'd. Mirrors how Xero models a contact, which
- * carries independent IsCustomer and IsSupplier flags — the same business can
- * be both, and duplicating the record to express that would be worse.
- */
-export const customerKindEnum = pgEnum("customer_kind", [
-  "customer",
-  "supplier",
-  "both",
-]);
-
 export const customerStatusEnum = pgEnum("customer_status", [
   "prospect",
   "active",
@@ -166,7 +155,18 @@ export const customers = pgTable(
     name: text("name").notNull(),
     legalName: text("legal_name"),
     abn: text("abn"),
-    kind: customerKindEnum("kind").notNull().default("customer"),
+    /**
+     * What this organisation is to Ankor'd. Independent flags rather than one
+     * kind: a single value forced "both" into existence to express customer +
+     * supplier, and every additional kind would double the combinations again.
+     * Flags also mirror Xero, which carries its own IsCustomer and IsSupplier.
+     *
+     * Any combination is legal, including none — a contact worth keeping that
+     * is not yet any of these.
+     */
+    isCustomer: boolean("is_customer").notNull().default(true),
+    isSupplier: boolean("is_supplier").notNull().default(false),
+    isMedia: boolean("is_media").notNull().default(false),
     status: customerStatusEnum("status").notNull().default("active"),
     /** The Xero ContactID this organisation is linked to, if any. */
     xeroContactId: text("xero_contact_id"),
@@ -204,7 +204,9 @@ export const customers = pgTable(
     index("customers_last_activity_idx").on(t.lastActivityAt),
     index("customers_owner_idx").on(t.ownerId),
     index("customers_name_idx").on(t.name),
-    index("customers_kind_idx").on(t.kind),
+    index("customers_customer_idx").on(t.isCustomer),
+    index("customers_supplier_idx").on(t.isSupplier),
+    index("customers_media_idx").on(t.isMedia),
     index("customers_xero_idx").on(t.xeroContactId),
   ],
 );

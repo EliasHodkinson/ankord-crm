@@ -34,6 +34,7 @@ import { readXeroSnapshot } from "@/lib/data/xero";
 import { readXeroConnection } from "@/lib/xero/auth";
 import { updateCustomer } from "@/lib/actions/customers";
 import { requireUser } from "@/lib/auth/session";
+import { kindBadges } from "@/lib/contact-kinds";
 import { formatDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -90,12 +91,11 @@ export default async function CustomerPage({
         eyebrow={
           <span className="flex flex-wrap items-center gap-1.5">
             <StatusBadge map={CUSTOMER_STATUS} value={customer.status} dot />
-            {/* Only worth saying when they are not simply a customer. */}
-            {customer.kind !== "customer" ? (
-              <Badge tone="neutral">
-                {customer.kind === "supplier" ? "Supplier" : "Customer & supplier"}
+            {kindBadges(customer).map((label) => (
+              <Badge key={label} tone="neutral">
+                {label}
               </Badge>
-            ) : null}
+            ))}
           </span>
         }
         description={customer.industry}
@@ -293,7 +293,8 @@ export default async function CustomerPage({
             <CardBody>
               <XeroAccount
                 customerId={customer.id}
-                kind={customer.kind}
+                isCustomer={customer.isCustomer}
+                isSupplier={customer.isSupplier}
                 linkedName={xero.contact?.name ?? (customer.xeroContactId ? "Xero contact" : null)}
                 balances={xero.contact?.balances ?? null}
                 invoices={xero.invoices}

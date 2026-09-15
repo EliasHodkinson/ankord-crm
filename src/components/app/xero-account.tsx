@@ -36,8 +36,9 @@ type Invoice = {
 
 export type XeroAccountProps = {
   customerId: string;
-  /** customer, supplier or both — decides which side of the ledger to lead with. */
-  kind: "customer" | "supplier" | "both";
+  /** Which side of the ledger to lead with. Both may be true. */
+  isCustomer: boolean;
+  isSupplier: boolean;
   linkedName: string | null;
   balances: Balances | null;
   invoices: Invoice[];
@@ -58,7 +59,8 @@ function statusTone(status: string, overdue: boolean) {
 export function XeroAccount(props: XeroAccountProps) {
   const {
     customerId,
-    kind,
+    isCustomer,
+    isSupplier,
     linkedName,
     balances,
     invoices,
@@ -84,9 +86,10 @@ export function XeroAccount(props: XeroAccountProps) {
 
   /* ── linked: show the account ──────────────────────────────────── */
   if (linkedName) {
-    const showReceivable =
-      kind !== "supplier" || (balances?.receivableOutstanding ?? 0) > 0;
-    const showPayable = kind !== "customer" || (balances?.payableOutstanding ?? 0) > 0;
+    // Show a side when the record is that kind, or when Xero says money is
+    // sitting there regardless of how the record is labelled.
+    const showReceivable = isCustomer || (balances?.receivableOutstanding ?? 0) > 0;
+    const showPayable = isSupplier || (balances?.payableOutstanding ?? 0) > 0;
 
     return (
       <div className="flex flex-col gap-4">

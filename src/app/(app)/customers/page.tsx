@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Plus } from "lucide-react";
-import { and, asc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import { PageBody, PageHeader } from "@/components/app/page-header";
 import { ButtonLink } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
@@ -9,6 +9,11 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Table, TableShell, Td, Th, Tr } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { CUSTOMER_STATUS, StatusBadge } from "@/components/ui/status";
+import {
+  isContactKindFilter,
+  KIND_FILTER_FIELD,
+  kindBadges,
+} from "@/lib/contact-kinds";
 import { FilterBar } from "@/components/app/filter-bar";
 import {
   BulkBar,
@@ -41,9 +46,10 @@ export default async function CustomersPage({
   if (status && status !== "all") {
     filters.push(eq(customers.status, status as "active"));
   }
-  if (kind === "customer" || kind === "supplier") {
-    // A record marked "both" is genuinely both, so it belongs in either list.
-    filters.push(inArray(customers.kind, [kind, "both"]));
+  if (isContactKindFilter(kind)) {
+    // Flags are independent, so a record that is several kinds appears under
+    // each of them — filtering to media must not hide a customer who is press.
+    filters.push(eq(customers[KIND_FILTER_FIELD[kind]], true));
   }
   if (q) {
     filters.push(
@@ -78,7 +84,7 @@ export default async function CustomersPage({
     <>
       <PageHeader
         title="Customers"
-        description="Every business Ankor'd works with — customers, suppliers, the people inside them, and what's running right now."
+        description="Everyone Ankor'd deals with — customers, suppliers, media, the people inside them, and what's running right now."
         meta={
           <p className="text-[13px] text-[var(--text-muted)]">
             <span className="font-semibold text-[var(--text)]">
@@ -106,9 +112,10 @@ export default async function CustomersPage({
               label: "Relationship",
               defaultValue: "all",
               options: [
-                { value: "all", label: "Customers & suppliers" },
+                { value: "all", label: "Everyone" },
                 { value: "customer", label: "Customers" },
                 { value: "supplier", label: "Suppliers" },
+                { value: "media", label: "Media" },
               ],
             },
             {
@@ -203,13 +210,11 @@ export default async function CustomersPage({
                               value={row.customer.status}
                               dot
                             />
-                            {row.customer.kind !== "customer" ? (
-                              <Badge tone="neutral">
-                                {row.customer.kind === "supplier"
-                                  ? "Supplier"
-                                  : "Both"}
+                            {kindBadges(row.customer).map((label) => (
+                              <Badge key={label} tone="neutral">
+                                {label}
                               </Badge>
-                            ) : null}
+                            ))}
                           </span>
                         </Td>
                         <Td className="text-[var(--text-muted)]">
