@@ -94,20 +94,22 @@ export async function createSession(userId: string, tokens: TokenSet): Promise<v
     .returning({ id: sessions.id });
 
   /**
-   * Inside a Microsoft Teams tab the app is framed, so the session cookie is a
-   * third-party cookie: SameSite=Lax would not be sent and everyone would look
-   * permanently signed out. SameSite=None fixes that, and browsers only accept
-   * it on a Secure cookie — so local http development keeps Lax.
+   * SameSite=Lax, the safer default.
    *
-   * The CSRF exposure that None would normally open is covered by Next.js
-   * server actions, which verify the request Origin against the host.
+   * This was briefly SameSite=None so the app could be framed as a Microsoft
+   * Teams tab, where the cookie is third-party and Lax is never sent. The tab
+   * is not being used, so the loosening is not being carried for nothing —
+   * None widens CSRF exposure, and a control relaxed for an unused feature is
+   * exactly the kind that is forgotten.
+   *
+   * If the Teams tab is ever wanted, this is the line to change, along with
+   * frame-ancestors in next.config.ts. Everyone has to sign in again for a new
+   * cookie to take effect.
    */
-  const framed = process.env.NODE_ENV === "production";
-
   (await cookies()).set(SESSION_COOKIE, await signCookie(row.id), {
     httpOnly: true,
-    secure: framed,
-    sameSite: framed ? "none" : "lax",
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
     path: "/",
     expires: expiresAt,
   });
