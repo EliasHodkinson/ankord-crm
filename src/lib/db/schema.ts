@@ -443,6 +443,14 @@ export const projectSteps = pgTable(
     /** Working notes typed against the step as the job progresses. */
     notes: text("notes"),
     links: jsonb("links").$type<{ url: string; label: string }[]>().notNull().default(sql`'[]'::jsonb`),
+    /**
+     * Ticked sub-items. Mirrors a Planner task's checklist, so item ids are
+     * GUIDs — Planner uses them as the keys of the checklist object.
+     */
+    checklist: jsonb("checklist")
+      .$type<{ id: string; title: string; done: boolean }[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     position: integer("position").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -787,6 +795,13 @@ export const settings = pgTable("settings", {
    */
   sharedMailboxes: text("shared_mailboxes").array().notNull().default(sql`ARRAY[]::text[]`),
 
+  /**
+   * The Microsoft 365 group new Planner plans are created in. Plans belong to
+   * a group, and its members are who can see and edit them in Planner.
+   */
+  plannerGroupId: text("planner_group_id"),
+  plannerGroupName: text("planner_group_name"),
+
   /* How long something can sit untouched before the CRM says something */
   staleLeadDays: integer("stale_lead_days").notNull().default(7),
   staleCustomerDays: integer("stale_customer_days").notNull().default(90),
@@ -794,6 +809,70 @@ export const settings = pgTable("settings", {
   updatedById: uuid("updated_by_id").references(() => users.id, { onDelete: "set null" }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/* ───────────────────────── planner ───────────────────────── */
+
+/**
+ * A project linked to a Microsoft Planner plan. One plan per project.
+ *
+ * Planner has no change notifications and its delta query is beta-only, so
+ * the link is kept in step by polling — see lib/planner/sync.ts. The lock and
+ * error columns are what make that safe to run from several browsers at once
+ * and visible when it goes wrong.
+ */
+export const plannerPlans = pgTable(
+  "planner_plans",
+  {
+    projectId: uuid("project_id")
+      .primaryKey()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    planId: text("plan_id").notNull(),
+    groupId: text("group_id"),
+    /** The plan's title as last seen, for display while Graph is unreachable. */
+    title: text("title"),
+    etag: text("etag"),
+    /** The synced plan fields as both sides last agreed them. */
+    base: jsonb("base").$type<Record<string, unknown>>(),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+    lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    /** Set while a sync runs; stale after a couple of minutes. */
+    lockedAt: timestamp("locked_at", { withTimezone: true }),
+    linkedById: uuid("linked_by_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("planner_plans_plan_idx").on(t.planId)],
+);
+
+/**
+ * One row per synced bucket (↔ phase) or task (↔ step).
+ *
+ * `localId` deliberately has no foreign key. When a phase or step is deleted
+ * here the row survives, and that is how the next sync knows to delete the
+ * Planner side too — it is the tombstone.
+ */
+export const plannerItems = pgTable(
+  "planner_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<"bucket" | "task">().notNull(),
+    localId: uuid("local_id").notNull(),
+    plannerId: text("planner_id").notNull(),
+    etag: text("etag"),
+    /** Task details (description, checklist, links) carry their own etag. */
+    detailsEtag: text("details_etag"),
+    base: jsonb("base").$type<Record<string, unknown>>(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("planner_items_project_idx").on(t.projectId),
+    uniqueIndex("planner_items_planner_idx").on(t.kind, t.plannerId),
+    uniqueIndex("planner_items_local_idx").on(t.kind, t.localId),
+  ],
+);
 
 /* ───────────────────────── xero ───────────────────────── */
 
@@ -948,3 +1027,5 @@ export type SavedView = typeof savedViews.$inferSelect;
 export type Settings = typeof settings.$inferSelect;
 export type CustomerGrant = typeof customerGrants.$inferSelect;
 export type SharepointGrant = typeof sharepointGrants.$inferSelect;
+export type PlannerPlanLink = typeof plannerPlans.$inferSelect;
+export type PlannerItem = typeof plannerItems.$inferSelect;

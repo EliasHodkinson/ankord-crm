@@ -48,6 +48,10 @@ before touching anything visual.
   or `customerId` sent alongside a child id — look the parent up.
 - SharePoint permissions the CRM adds are recorded in `sharepoint_grants` and
   only those are ever removed. Never delete a permission the ledger did not add.
+- A new action that writes a project's phases, steps or name must call
+  `queuePlannerSync(projectId)` (`lib/planner/push.ts`), or the edit only
+  reaches a linked Planner plan on the next poll. Comparisons against the sync
+  base go through `sameValue()` — the base is jsonb, which reorders keys.
 - Charts use the `--chart-*` tokens. The dark ramp is a chosen set of steps, not
   a flip of the light one — see DESIGN.md.
 

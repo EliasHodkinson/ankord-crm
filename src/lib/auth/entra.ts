@@ -20,6 +20,11 @@ export const GRAPH_SCOPES = [
   // no application-permission path for To Do — /me/todo is delegated only — so
   // each person's list is only ever written with their own token.
   "Tasks.ReadWrite",
+  // Naming the Microsoft 365 groups a person belongs to, so they can choose
+  // where a Planner plan lives. User.Read alone returns the group ids with
+  // every other property blanked out. Needs admin consent — grant it before
+  // deploying, or token refresh fails for everyone until it is granted.
+  "GroupMember.Read.All",
 ] as const;
 
 export const SCOPE_STRING = GRAPH_SCOPES.join(" ");
