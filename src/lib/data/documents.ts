@@ -170,7 +170,19 @@ export type DocumentDetail = NonNullable<Awaited<ReturnType<typeof getDocument>>
 
 export type RelatedDoc = Pick<
   Document,
-  "id" | "type" | "number" | "status" | "isReserve" | "total" | "docDate" | "xeroSyncState"
+  | "id"
+  | "type"
+  | "number"
+  | "status"
+  | "isReserve"
+  | "total"
+  | "docDate"
+  | "dueDate"
+  | "quoteOutcome"
+  | "closedBy"
+  | "amountPaid"
+  | "amountDue"
+  | "xeroSyncState"
 > & { relation: "base" | "child" };
 
 /** Documents this one was drawn from, and those drawn from it. */
@@ -187,6 +199,11 @@ export async function relatedDocuments(doc: Document): Promise<RelatedDoc[]> {
     isReserve: documents.isReserve,
     total: documents.total,
     docDate: documents.docDate,
+    dueDate: documents.dueDate,
+    quoteOutcome: documents.quoteOutcome,
+    closedBy: documents.closedBy,
+    amountPaid: documents.amountPaid,
+    amountDue: documents.amountDue,
     xeroSyncState: documents.xeroSyncState,
   };
 
@@ -354,6 +371,9 @@ export async function copyDraft(
   if (doc.status === "cancelled" || (doc.status === "closed" && doc.type !== "quote")) {
     return { error: `${doc.number ?? "That document"} is ${doc.status}, so nothing more can be drawn from it.` };
   }
+  if (doc.type === "sales_order" && doc.status === "draft") {
+    return { error: `Confirm ${doc.number} before invoicing it.` };
+  }
   if (doc.type === "quote" && doc.status === "closed") {
     return { error: `Quote ${doc.number ?? ""} is closed. Reopen it to convert the rest.`.replace("  ", " ") };
   }
@@ -392,7 +412,7 @@ export async function copyDraft(
       title: null,
       summary: null,
       terms: null,
-      remarks: [basedOnRemark(doc), doc.remarks].filter(Boolean).join("\n"),
+      remarks: basedOnRemark(doc) || null,
       internalNotes: null,
       isReserve: reserve,
     },

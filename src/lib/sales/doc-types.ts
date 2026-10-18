@@ -165,10 +165,19 @@ export function copyCounter(from: DocType, to: DocType, reserve = false): Counte
   return COPY_TO[from]?.find((p) => p.to === to && Boolean(p.reserve) === reserve)?.counter ?? null;
 }
 
-/** "QU-0042", or "Draft quote" until Xero has numbered it. */
-export function documentTitle(doc: { type: DocType; number: string | null; isReserve?: boolean }) {
+/**
+ * "QU-0042", or until Xero has numbered it: "Draft quote", or for one that is
+ * already approved or sent, "Invoice (not in Xero yet)".
+ */
+export function documentTitle(doc: {
+  type: DocType;
+  number: string | null;
+  isReserve?: boolean;
+  status?: string;
+}) {
   if (doc.number) return doc.number;
   const label = doc.type === "invoice" && doc.isReserve ? "Reserve invoice" : DOC_TYPES[doc.type].label;
+  if (doc.status && doc.status !== "draft") return `${label} (not in Xero yet)`;
   return `Draft ${label.toLowerCase()}`;
 }
 

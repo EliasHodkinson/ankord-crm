@@ -62,15 +62,15 @@ export function ItemForm({
       <GoToSaved />
       <FormSection title="The item">
         <FormRow cols={3}>
-          <TextField name="code" label="Code" required maxLength={30} defaultValue={item?.code ?? ""} hint="Up to 30 characters, as in Xero" />
-          <TextField name="name" label="Name" required maxLength={50} defaultValue={item?.name ?? ""} />
-          <TextField name="unit" label="Unit" defaultValue={item?.unit ?? ""} placeholder="ea, hr, box of 500" />
+          <TextField name="code" id="item-code" label="Code" required maxLength={30} defaultValue={item?.code ?? ""} hint="Up to 30 characters, as in Xero" />
+          <TextField name="name" id="item-name" label="Name" required maxLength={50} defaultValue={item?.name ?? ""} />
+          <TextField name="unit" id="item-unit" label="Unit" defaultValue={item?.unit ?? ""} placeholder="ea, hr, box of 500" />
         </FormRow>
         <FormRow cols={3}>
-          <CheckboxField name="isSold" label="We sell it" defaultChecked={item?.isSold ?? true} />
-          <CheckboxField name="isPurchased" label="We buy it" defaultChecked={item?.isPurchased ?? false} />
+          <CheckboxField name="isSold" id="item-isSold" label="We sell it" defaultChecked={item?.isSold ?? true} />
+          <CheckboxField name="isPurchased" id="item-isPurchased" label="We buy it" defaultChecked={item?.isPurchased ?? false} />
           <CheckboxField
-            name="tracksStock"
+            name="tracksStock" id="item-tracksStock"
             label="Physical goods"
             hint="Counted in and out — ordered, received and delivered. Leave off for services."
             defaultChecked={item?.tracksStock ?? false}
@@ -79,23 +79,23 @@ export function ItemForm({
       </FormSection>
 
       <FormSection title="Selling" description="What a quote or invoice line defaults to.">
-        <TextAreaField name="description" label="Sales description" rows={2} defaultValue={item?.description ?? ""} />
+        <TextAreaField name="description" id="item-description" label="Sales description" rows={2} defaultValue={item?.description ?? ""} />
         <FormRow cols={3}>
           <TextField
-            name="salePrice"
+            name="salePrice" id="item-salePrice"
             label="Sale price (ex GST)"
             inputMode="decimal"
             defaultValue={item?.salePrice ? trim(item.salePrice) : ""}
           />
           <SelectField
-            name="salesAccountCode"
+            name="salesAccountCode" id="item-salesAccountCode"
             label="Sales account"
             hint={accountHint}
             defaultValue={item?.salesAccountCode ?? ""}
             options={accountOptions(salesAccounts, item?.salesAccountCode)}
           />
           <SelectField
-            name="salesTaxType"
+            name="salesTaxType" id="item-salesTaxType"
             label="Sales tax"
             defaultValue={item?.salesTaxType ?? ""}
             options={taxOptions(salesTax)}
@@ -105,27 +105,27 @@ export function ItemForm({
 
       <FormSection title="Buying" description="What a purchase-order line defaults to. A missing buy price is shown as missing, never guessed.">
         <TextAreaField
-          name="purchaseDescription"
+          name="purchaseDescription" id="item-purchaseDescription"
           label="Purchase description"
           rows={2}
           defaultValue={item?.purchaseDescription ?? ""}
         />
         <FormRow cols={3}>
           <TextField
-            name="purchasePrice"
+            name="purchasePrice" id="item-purchasePrice"
             label="Buy price (ex GST)"
             inputMode="decimal"
             defaultValue={item?.purchasePrice ? trim(item.purchasePrice) : ""}
           />
           <SelectField
-            name="purchaseAccountCode"
+            name="purchaseAccountCode" id="item-purchaseAccountCode"
             label="Purchase account"
             hint={accountHint}
             defaultValue={item?.purchaseAccountCode ?? ""}
             options={accountOptions(purchaseAccounts, item?.purchaseAccountCode)}
           />
           <SelectField
-            name="purchaseTaxType"
+            name="purchaseTaxType" id="item-purchaseTaxType"
             label="Purchase tax"
             defaultValue={item?.purchaseTaxType ?? ""}
             options={taxOptions(purchaseTax)}
@@ -133,6 +133,7 @@ export function ItemForm({
         </FormRow>
         <SelectField
           name="preferredSupplierId"
+              id="item-preferredSupplierId"
           label="Usual supplier"
           defaultValue={item?.preferredSupplierId ?? ""}
           options={[{ value: "", label: suppliers.length ? "None" : "No suppliers yet" }, ...suppliers.map((s) => ({ value: s.id, label: s.name }))]}

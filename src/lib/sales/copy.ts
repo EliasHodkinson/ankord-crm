@@ -94,10 +94,9 @@ function copyOf(line: SourceLine, baseLineId: string | null, max: string | null)
 
 /** The sentence a copied document's remarks open with. */
 export function basedOnRemark(source: { type: string; number: string | null }): string {
-  const ref = source.number ?? "a draft";
-  return source.type === "quote"
-    ? `Based on Quote ${ref}.`
-    : source.type === "sales_order"
-      ? `From sales order ${ref}.`
-      : `From ${ref}.`;
+  if (source.type === "quote") {
+    return source.number ? `Based on Quote ${source.number}.` : "Based on a draft quote.";
+  }
+  if (source.type === "sales_order") return `From sales order ${source.number}.`;
+  return source.number ? `From ${source.number}.` : "";
 }

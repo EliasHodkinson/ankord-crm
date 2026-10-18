@@ -130,14 +130,23 @@ export async function DocumentDetailPage({
           <Card>
             <CardHeader title="Details" />
             <CardBody>
-              <dl className="grid divide-y divide-[var(--border-soft)] sm:grid-cols-2 sm:gap-x-8 sm:divide-y-0">
+              <dl className="grid divide-y divide-[var(--border-soft)] xl:grid-cols-2 xl:gap-x-8 xl:divide-y-0">
                 <DataRow label={config.side === "customer" ? "Customer" : "Supplier"}>
                   <Link href={`/customers/${doc.partnerId}`} className="hover:underline underline-offset-2">
                     {doc.partnerName}
                   </Link>
                 </DataRow>
                 <DataRow label="Contact">
-                  {doc.contactName ? `${doc.contactName}${doc.contactEmail ? ` · ${doc.contactEmail}` : ""}` : "—"}
+                  {doc.contactName ? (
+                    <span className="[overflow-wrap:anywhere]">
+                      {doc.contactName}
+                      {doc.contactEmail ? (
+                        <span className="block text-[12px] text-[var(--text-muted)]">{doc.contactEmail}</span>
+                      ) : null}
+                    </span>
+                  ) : (
+                    "—"
+                  )}
                 </DataRow>
                 <DataRow label="Date">{formatDate(doc.docDate)}</DataRow>
                 {config.dueLabel ? <DataRow label={config.dueLabel}>{formatDate(doc.dueDate)}</DataRow> : null}

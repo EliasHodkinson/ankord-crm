@@ -25,7 +25,8 @@ export async function createXeroContactFor(customerId: string): Promise<CreateCo
     return { ok: false, clash: null, message: `${c.name} is already linked to Xero.` };
   }
 
-  const name = c.legalName?.trim() || c.name;
+  // The name people know them by, as on the record; the ABN identifies the entity.
+  const name = c.name.trim();
   const where = encodeURIComponent(`Name=="${name.replace(/"/g, '\\"')}"`);
   const existing = await xeroSend<{ Contacts?: { ContactID: string; Name: string }[] }>(
     "GET",

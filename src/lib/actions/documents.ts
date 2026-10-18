@@ -549,8 +549,12 @@ async function lockBaseLines(tx: Tx, lines: LineInput[], partnerId: string) {
     if (r.docPartner !== partnerId) {
       throw new Refusal("Lines can only be drawn from documents for the same business partner.");
     }
-    if (r.docStatus === "cancelled") {
-      throw new Refusal(`${r.docNumber ?? "The source document"} has been cancelled.`);
+    const source = r.docNumber ?? `The ${typeLabel(r.docType).toLowerCase()}`;
+    if (r.docStatus === "cancelled") throw new Refusal(`${source} has been cancelled.`);
+    if (r.docStatus === "closed") throw new Refusal(`${source} is closed. Reopen it to draw more from it.`);
+    // Orders are drawn from once confirmed (§4.4: copy-to is from open documents).
+    if (r.docType === "sales_order" && r.docStatus !== "open") {
+      throw new Refusal(`Confirm ${source} before invoicing it.`);
     }
     map.set(r.line.id, {
       ...r.line,
@@ -600,7 +604,9 @@ async function assertWithinBases(tx: Tx, bases: Map<string, BaseLine>, type: Doc
         .where(eq(documentLines.baseLineId, line.id));
       const left = num(line.quantity) - (num(line[counter]) - num(mine[0]?.q ?? 0));
       throw new Refusal(
-        `Only ${formatQty(Math.max(0, left))} left to ${verbFor(counter)} on ${base.docNumber ?? "the source"} line ${n}.`,
+        `Only ${formatQty(Math.max(0, left))} left to ${verbFor(counter)} on ${
+          base.docNumber ?? `the draft ${typeLabel(base.docType).toLowerCase()}`
+        } line ${n}.`,
       );
     }
   }
@@ -897,7 +903,12 @@ export async function cancelDocument(id: string, reason?: string): Promise<Actio
     revalidateDoc(saved);
     return {
       ok: true,
-      message: doc.type === "invoice" ? "Voided here, and in Xero shortly." : "Cancelled.",
+      message:
+        doc.type === "invoice"
+          ? saved.xeroId
+            ? "Voided here, and in Xero shortly."
+            : "Voided. It never reached Xero, so there is nothing to void there."
+          : "Cancelled.",
     };
   });
 }

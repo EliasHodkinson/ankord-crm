@@ -32,7 +32,7 @@ export function LinesView({
       <table className="w-full min-w-[46rem] border-collapse text-[13px]">
         <thead>
           <tr>
-            <th className={cn(th, "text-left")}>Item</th>
+            <th className={cn(th, "min-w-56 text-left")}>Item</th>
             <th className={cn(th, "text-right")}>Qty</th>
             {fulfilment ? (
               <>

@@ -566,8 +566,20 @@ export async function pushItem(itemId: string): Promise<PushOutcome> {
       const found = await xeroSend<{ Items?: { ItemID: string }[] }>("GET", `/Items?where=${where}`);
       xeroItemId = found.Items?.[0]?.ItemID ?? null;
     }
+    // An item with no account of its own goes to Xero with the defaults it
+    // would be coded to anyway, so the Xero item is never account-less.
+    const [config] = await db.select().from(settings).where(eq(settings.id, "singleton"));
     const data = await xeroSend<{ Items?: { ItemID: string }[] }>("POST", "/Items?unitdp=4", {
-      Items: [itemPayload({ ...item, xeroItemId })],
+      Items: [
+        itemPayload({
+          ...item,
+          xeroItemId,
+          salesAccountCode: item.salesAccountCode ?? config?.defaultSalesAccount ?? null,
+          purchaseAccountCode: item.purchaseAccountCode ?? config?.defaultPurchaseAccount ?? null,
+          salesTaxType: item.salesTaxType ?? config?.defaultSalesTaxType ?? null,
+          purchaseTaxType: item.purchaseTaxType ?? config?.defaultPurchaseTaxType ?? null,
+        }),
+      ],
     });
     const savedId = data.Items?.[0]?.ItemID ?? xeroItemId;
     await log({ entityType: "item", entityId: itemId, action: "push", httpStatus: 200, xeroId: savedId, startedAt });

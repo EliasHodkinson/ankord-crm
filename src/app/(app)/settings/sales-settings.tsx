@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2, RefreshCw } from "lucide-react";
 import { ActionForm, SaveIndicator, SubmitButton } from "@/components/ui/form";
@@ -77,9 +76,10 @@ export function SalesSettings({
             ? `Accounts and tax rates read from Xero ${formatDateTime(refsFetchedAt)}.`
             : "Xero's accounts and tax rates have not been read yet."}{" "}
           {problems > 0 ? (
-            <Link href="/sales/invoices?xero=problems&status=all" className="font-medium text-[var(--danger)] hover:underline underline-offset-2">
-              {problems} {problems === 1 ? "document needs" : "documents need"} attention in Xero.
-            </Link>
+            <span className="font-medium text-[var(--danger)]">
+              {problems} {problems === 1 ? "document needs" : "documents need"} attention in Xero. Filter
+              any sales list by &ldquo;Xero problems&rdquo; to find {problems === 1 ? "it" : "them"}.
+            </span>
           ) : connected ? (
             "Nothing is stuck."
           ) : null}
@@ -105,13 +105,13 @@ export function SalesSettings({
         <FormSection title="Default accounts" description="Used when an item does not name its own. Items can override both.">
           <FormRow cols={2}>
             <SelectField
-              name="defaultSalesAccount"
+              name="defaultSalesAccount" id="sales-defaultSalesAccount"
               label="Sales"
               defaultValue={settings?.defaultSalesAccount ?? ""}
               options={accountOptions(accounts.filter(isSalesAccount), settings?.defaultSalesAccount)}
             />
             <SelectField
-              name="defaultPurchaseAccount"
+              name="defaultPurchaseAccount" id="sales-defaultPurchaseAccount"
               label="Purchases"
               defaultValue={settings?.defaultPurchaseAccount ?? ""}
               options={accountOptions(accounts.filter(isPurchaseAccount), settings?.defaultPurchaseAccount)}
@@ -120,12 +120,14 @@ export function SalesSettings({
           <FormRow cols={2}>
             <SelectField
               name="defaultSalesTaxType"
+              id="sales-defaultSalesTaxType"
               label="Sales tax"
               defaultValue={settings?.defaultSalesTaxType ?? ""}
               options={taxOptions(taxRates.filter((t) => t.canApplyToRevenue))}
             />
             <SelectField
               name="defaultPurchaseTaxType"
+              id="sales-defaultPurchaseTaxType"
               label="Purchase tax"
               defaultValue={settings?.defaultPurchaseTaxType ?? ""}
               options={taxOptions(taxRates.filter((t) => t.canApplyToExpenses))}
@@ -135,27 +137,27 @@ export function SalesSettings({
 
         <FormSection title="Branding themes" description="Which Xero theme each document is created with.">
           <FormRow cols={3}>
-            <SelectField name="quoteBrandingThemeId" label="Quotes" defaultValue={settings?.quoteBrandingThemeId ?? ""} options={themeOptions} />
-            <SelectField name="invoiceBrandingThemeId" label="Invoices" defaultValue={settings?.invoiceBrandingThemeId ?? ""} options={themeOptions} />
-            <SelectField name="poBrandingThemeId" label="Purchase orders" defaultValue={settings?.poBrandingThemeId ?? ""} options={themeOptions} />
+            <SelectField name="quoteBrandingThemeId" id="sales-quoteBrandingThemeId" label="Quotes" defaultValue={settings?.quoteBrandingThemeId ?? ""} options={themeOptions} />
+            <SelectField name="invoiceBrandingThemeId" id="sales-invoiceBrandingThemeId" label="Invoices" defaultValue={settings?.invoiceBrandingThemeId ?? ""} options={themeOptions} />
+            <SelectField name="poBrandingThemeId" id="sales-poBrandingThemeId" label="Purchase orders" defaultValue={settings?.poBrandingThemeId ?? ""} options={themeOptions} />
           </FormRow>
         </FormSection>
 
         <FormSection title="Terms">
           <FormRow cols={3}>
-            <TextField name="customerTermsDays" label="Customers pay within (days)" type="number" min={0} defaultValue={String(settings?.customerTermsDays ?? 14)} />
-            <TextField name="supplierTermsDays" label="We pay suppliers within (days)" type="number" min={0} defaultValue={String(settings?.supplierTermsDays ?? 30)} />
-            <TextField name="quoteValidityDays" label="Quotes are valid for (days)" type="number" min={1} defaultValue={String(settings?.quoteValidityDays ?? 30)} />
+            <TextField name="customerTermsDays" id="sales-customerTermsDays" label="Customers pay within (days)" type="number" min={0} defaultValue={String(settings?.customerTermsDays ?? 14)} />
+            <TextField name="supplierTermsDays" id="sales-supplierTermsDays" label="We pay suppliers within (days)" type="number" min={0} defaultValue={String(settings?.supplierTermsDays ?? 30)} />
+            <TextField name="quoteValidityDays" id="sales-quoteValidityDays" label="Quotes are valid for (days)" type="number" min={1} defaultValue={String(settings?.quoteValidityDays ?? 30)} />
           </FormRow>
           <TextAreaField
-            name="deliveryAddress"
+            name="deliveryAddress" id="sales-deliveryAddress"
             label="Our delivery address"
             rows={2}
             hint="Where suppliers deliver to, unless a purchase order says otherwise"
             defaultValue={settings?.deliveryAddress ?? ""}
           />
           <CheckboxField
-            name="allowBillApproval"
+            name="allowBillApproval" id="sales-allowBillApproval"
             label="The Gangway may approve supplier bills"
             hint="Off leaves bills as Xero drafts for whoever does accounts."
             defaultChecked={settings?.allowBillApproval ?? true}
@@ -164,8 +166,8 @@ export function SalesSettings({
 
         <FormSection title="Sales order numbers" description="Quotes and invoices take Xero's numbers. Sales orders are numbered here.">
           <FormRow cols={3}>
-            <TextField name="soPrefix" label="Prefix" defaultValue={soSeries.prefix} />
-            <TextField name="soNext" label="Next number" type="number" min={1} defaultValue={String(soSeries.nextValue)} />
+            <TextField name="soPrefix" id="sales-soPrefix" label="Prefix" defaultValue={soSeries.prefix} />
+            <TextField name="soNext" id="sales-soNext" label="Next number" type="number" min={1} defaultValue={String(soSeries.nextValue)} />
           </FormRow>
         </FormSection>
 

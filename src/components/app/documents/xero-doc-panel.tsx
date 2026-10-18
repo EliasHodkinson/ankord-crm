@@ -59,7 +59,8 @@ export function XeroDocPanel({
       const outcome = await fn();
       setResult(outcome);
       setBusy(null);
-      router.refresh();
+      // Drop a "Saved." banner from an earlier step; it no longer describes the page.
+      router.replace(window.location.pathname, { scroll: false });
     });
   };
 
@@ -86,7 +87,7 @@ export function XeroDocPanel({
           role="alert"
           className={cn(
             "flex items-start gap-2 rounded-lg border px-3 py-2 text-[12px] leading-5",
-            syncState === "blocked"
+            syncState !== "failed"
               ? "border-[var(--warn)]/30 bg-[var(--warn-bg)] text-[var(--warn)]"
               : "border-[var(--danger)]/30 bg-[var(--danger-bg)] text-[var(--danger)]",
           )}
@@ -143,7 +144,7 @@ export function XeroDocPanel({
             Open in Xero
           </a>
         ) : null}
-        {canWrite && (syncState === "failed" || syncState === "blocked" || syncState === "pending" || mismatch) ? (
+        {canWrite && (syncState !== "synced" && syncState !== "pushing" || mismatch) ? (
           <Button
             size="sm"
             variant="secondary"

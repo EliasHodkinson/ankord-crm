@@ -318,6 +318,7 @@ export function DocumentEditor(props: EditorProps) {
             <SelectField
               key={`contact-${partner?.id ?? "none"}`}
               name="contactId"
+              id="doc-contactId"
               label="Contact"
               disabled={locked}
               defaultValue={
@@ -336,8 +337,9 @@ export function DocumentEditor(props: EditorProps) {
           </FormRow>
 
           <FormRow cols={3}>
-            <Field label="Date" required>
+            <Field label="Date" required htmlFor="doc-docDate">
               <Input
+                id="doc-docDate"
                 type="date"
                 name="docDate"
                 value={docDate}
@@ -351,8 +353,9 @@ export function DocumentEditor(props: EditorProps) {
               />
             </Field>
             {props.type === "invoice" ? (
-              <Field label="Terms (days)" hint="0 means due on the day">
+              <Field label="Terms (days)" hint="0 means due on the day" htmlFor="doc-termsDays">
                 <Input
+                  id="doc-termsDays"
                   type="number"
                   min={0}
                   name="termsDays"
@@ -370,8 +373,10 @@ export function DocumentEditor(props: EditorProps) {
                 label={config.dueLabel}
                 required={config.dueRequired}
                 hint={props.type === "quote" ? `Defaults to ${props.validityDays} days` : undefined}
+                htmlFor="doc-dueDate"
               >
                 <Input
+                  id="doc-dueDate"
                   type="date"
                   name="dueDate"
                   value={dueDate}
@@ -384,13 +389,14 @@ export function DocumentEditor(props: EditorProps) {
 
           <FormRow cols={2}>
             <TextField
-              name="reference"
+              name="reference" id="doc-reference"
               label={side === "customer" ? "Customer reference" : "Reference"}
               hint={side === "customer" ? "Their PO number, if they gave one" : undefined}
               defaultValue={props.header.reference ?? ""}
             />
             <SelectField
               name="ownerId"
+              id="doc-ownerId"
               label="Owner"
               defaultValue={props.header.ownerId ?? ""}
               options={[{ value: "", label: "Unassigned" }, ...props.team.map((t) => ({ value: t.id, label: t.name }))]}
@@ -401,6 +407,7 @@ export function DocumentEditor(props: EditorProps) {
             <SelectField
               key={`project-${partner?.id ?? "none"}`}
               name="projectId"
+              id="doc-projectId"
               label="Project"
               defaultValue={props.header.projectId ?? ""}
               options={[
@@ -411,7 +418,7 @@ export function DocumentEditor(props: EditorProps) {
             {locked ? null : (
               <TextAreaField
                 key={`ship-${partner?.id ?? "none"}`}
-                name="shipToText"
+                name="shipToText" id="doc-shipToText"
                 label={side === "customer" ? "Deliver to" : "Deliver to"}
                 rows={2}
                 className="[&_textarea]:min-h-16"
@@ -422,16 +429,16 @@ export function DocumentEditor(props: EditorProps) {
 
           {props.type === "quote" && !locked ? (
             <FormSection title="On the quote" description="Xero prints these on the quote it sends.">
-              <TextField name="title" label="Title" defaultValue={props.header.title ?? ""} />
-              <TextAreaField name="summary" label="Summary" rows={2} defaultValue={props.header.summary ?? ""} />
-              <TextAreaField name="terms" label="Terms" rows={2} defaultValue={props.header.terms ?? ""} />
+              <TextField name="title" id="doc-title" label="Title" defaultValue={props.header.title ?? ""} />
+              <TextAreaField name="summary" id="doc-summary" label="Summary" rows={2} defaultValue={props.header.summary ?? ""} />
+              <TextAreaField name="terms" id="doc-terms" label="Terms" rows={2} defaultValue={props.header.terms ?? ""} />
             </FormSection>
           ) : null}
 
           <FormRow cols={2}>
             {locked ? null : (
               <TextAreaField
-                name="remarks"
+                name="remarks" id="doc-remarks"
                 label="Remarks"
                 rows={2}
                 hint="Kept with the document here"
@@ -439,7 +446,7 @@ export function DocumentEditor(props: EditorProps) {
               />
             )}
             <TextAreaField
-              name="internalNotes"
+              name="internalNotes" id="doc-internalNotes"
               label="Internal notes"
               rows={2}
               hint="Never leaves The Gangway"
@@ -466,11 +473,11 @@ export function DocumentEditor(props: EditorProps) {
             }
           />
           <div className="overflow-x-auto scrollbar-slim">
-            <table className="w-full min-w-[60rem] border-collapse text-[13px]">
+            <table className="w-full min-w-[66rem] border-collapse text-[13px]">
               <thead>
                 <tr className="text-left text-[11px] font-semibold tracking-[0.04em] text-[var(--text-muted)] uppercase">
                   <th className="w-14 border-b border-[var(--border)] bg-[var(--surface-2)] px-2 py-2" />
-                  <th className="border-b border-[var(--border)] bg-[var(--surface-2)] px-2 py-2">Description</th>
+                  <th className="min-w-64 border-b border-[var(--border)] bg-[var(--surface-2)] px-2 py-2">Description</th>
                   <th className="w-24 border-b border-[var(--border)] bg-[var(--surface-2)] px-2 py-2 text-right">Qty</th>
                   <th className="w-28 border-b border-[var(--border)] bg-[var(--surface-2)] px-2 py-2 text-right">Price</th>
                   <th className="w-20 border-b border-[var(--border)] bg-[var(--surface-2)] px-2 py-2 text-right">Disc %</th>

@@ -59,7 +59,8 @@ export async function recomputeCounters(tx: Tx, lineIds: (string | null | undefi
       qty_invoiced = case when p.type = 'sales_order'
         then ${sumChildren("'invoice'")} else 0 end,
       qty_delivered = case
-        when p.type = 'sales_order' then
+        -- services are never delivered; only goods are counted out
+        when p.type = 'sales_order' and document_lines.tracks_stock then
           -- a normal invoice delivers once it is approved…
           ${sumChildren("'invoice'", sql`and d.is_reserve = false and d.status in ('open','closed')`)}
           -- …and a reserve invoice's goods go out on a delivery against it

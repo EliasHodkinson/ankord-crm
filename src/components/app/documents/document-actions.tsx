@@ -84,7 +84,8 @@ export function DocumentActions({ documentId, actions }: { documentId: string; a
       setAsking(null);
       setRunning(null);
       if (outcome.ok && outcome.data?.href) router.push(outcome.data.href);
-      else router.refresh();
+      // Drop a "Saved." banner from an earlier step; it no longer describes the page.
+      else router.replace(window.location.pathname, { scroll: false });
     });
   };
 
@@ -107,7 +108,7 @@ export function DocumentActions({ documentId, actions }: { documentId: string; a
             <Button
               key={action.id}
               size="sm"
-              variant={action.primary ? "primary" : action.danger ? "ghost" : "secondary"}
+              variant={action.primary && !asking ? "primary" : action.danger ? "ghost" : "secondary"}
               className={cn(action.danger && "text-[var(--danger)] hover:text-[var(--danger)]")}
               disabled={pending}
               onClick={() => (action.confirm ? setAsking(action) : go(action))}

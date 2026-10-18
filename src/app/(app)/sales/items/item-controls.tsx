@@ -19,7 +19,8 @@ export function ItemControls({ itemId, archived }: { itemId: string; archived: b
     start(async () => {
       setResult(await fn());
       setBusy(null);
-      router.refresh();
+      // Drop a "Saved." banner from an earlier step; it no longer describes the page.
+      router.replace(window.location.pathname, { scroll: false });
     });
   };
 
