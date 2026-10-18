@@ -8,10 +8,10 @@ import { getDb } from "@/lib/db";
 import { sessions, users, type User } from "@/lib/db/schema";
 import { cookieSecret, decryptSecret, encryptSecret } from "./crypto";
 import {
-  ACCESS_ADMIN_SCOPE_STRING,
   EntraTokenError,
-  hasAccessAdminScopes,
+  grantedScopeSets,
   issuer,
+  scopeStringFor,
   jwksUrl,
   refreshTokens,
   type TokenSet,
@@ -214,11 +214,10 @@ export async function getGraphToken(): Promise<string> {
 
   let tokens: TokenSet;
   try {
-    // Keep an admin's people-management scopes across a refresh; everyone else
-    // refreshes with the ordinary set.
+    // Keep whatever optional scopes this session was granted across a refresh.
     tokens = await refreshTokens(
       await decryptSecret(row.refreshTokenEnc),
-      hasAccessAdminScopes(row.scope) ? ACCESS_ADMIN_SCOPE_STRING : undefined,
+      scopeStringFor(grantedScopeSets(row.scope)),
     );
   } catch (error) {
     if (error instanceof EntraTokenError) {

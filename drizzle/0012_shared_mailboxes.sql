@@ -1,0 +1,1 @@
+ALTER TABLE "settings" ADD COLUMN "shared_mailboxes" text[] DEFAULT ARRAY[]::text[] NOT NULL;

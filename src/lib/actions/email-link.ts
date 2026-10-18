@@ -7,6 +7,7 @@ import { getDb } from "@/lib/db";
 import { communications, contacts } from "@/lib/db/schema";
 import { getGraphToken, requireUser } from "@/lib/auth/session";
 import { assertLinks } from "@/lib/access";
+import { resolveMailbox } from "@/lib/data/common";
 import {
   addressOf,
   cleanText,
@@ -56,6 +57,13 @@ export async function linkEmails(
   }
   await assertLinks({ customerId, projectId, leadId });
 
+  // Your own mailbox, or a shared one an admin has listed in Settings.
+  const requestedMailbox = formData.get("mailbox");
+  const mailbox = await resolveMailbox(requestedMailbox);
+  if (requestedMailbox && !mailbox) {
+    return fail("That shared mailbox is not one the CRM links from. An admin can add it in Settings.");
+  }
+
   const ids = parsed.data.messageIds.split(" ").filter(Boolean);
   const db = getDb();
 
@@ -66,7 +74,7 @@ export async function linkEmails(
     const token = await getGraphToken();
 
     for (const messageId of ids) {
-      const message = await getMessage(token, messageId);
+      const message = await getMessage(token, messageId, mailbox);
 
       // One CRM entry per Microsoft message, no matter who links it.
       if (message.internetMessageId) {
@@ -98,7 +106,11 @@ export async function linkEmails(
         leadId,
         contactId,
         type: "email",
-        direction: fromAddress === user.email.toLowerCase() ? "outbound" : "inbound",
+        // Sent from the mailbox it was read from — theirs, or the shared one.
+        direction:
+          fromAddress === user.email.toLowerCase() || fromAddress === mailbox?.toLowerCase()
+            ? "outbound"
+            : "inbound",
         visibility,
         subject: cleanText(message.subject ?? "") || "(no subject)",
         preview: (isHtml ? htmlToText(body) : cleanText(body)).slice(0, 400),

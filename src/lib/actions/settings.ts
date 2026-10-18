@@ -72,6 +72,39 @@ export async function saveLibrary(
   return { ok: true, message: "SharePoint library saved." };
 }
 
+const mailboxList = z.preprocess(
+  (v) =>
+    typeof v === "string"
+      ? [...new Set(v.split(/[\s,;]+/).map((a) => a.trim().toLowerCase()).filter(Boolean))]
+      : [],
+  z.array(z.email("One of those is not an email address.")).max(30),
+);
+
+/**
+ * The shared mailboxes Link email offers, one address per line. Listing one
+ * grants nothing: Exchange decides, person by person, who can open it.
+ */
+export async function saveSharedMailboxes(
+  _prev: ActionState | undefined,
+  formData: FormData,
+): Promise<ActionState> {
+  const { user } = await requireAdmin();
+  const parsed = mailboxList.safeParse(formData.get("sharedMailboxes"));
+  if (!parsed.success) return fromZod(parsed.error);
+
+  await getDb()
+    .insert(settings)
+    .values({ id: "singleton", sharedMailboxes: parsed.data, updatedById: user.id })
+    .onConflictDoUpdate({
+      target: settings.id,
+      set: { sharedMailboxes: parsed.data, updatedById: user.id, updatedAt: new Date() },
+    });
+
+  revalidatePath("/settings");
+  revalidatePath("/inbox");
+  return { ok: true, message: "Shared mailboxes saved." };
+}
+
 /** Drops the Xero connection. Admin-only, like connecting it. */
 export async function disconnectXeroAction(): Promise<ActionState> {
   const { user } = await requireAdmin();

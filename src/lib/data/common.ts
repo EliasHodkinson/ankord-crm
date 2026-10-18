@@ -36,3 +36,18 @@ export const getThresholds = cache(async (): Promise<StaleThresholds> => {
     project: row?.staleProjectDays ?? DEFAULT_THRESHOLDS.project,
   };
 });
+
+/** The shared mailboxes an admin has listed, for the Link email picker. */
+export async function listSharedMailboxes(): Promise<string[]> {
+  return (await getSettings())?.sharedMailboxes ?? [];
+}
+
+/**
+ * A mailbox named in a request, if it is one an admin listed — otherwise null,
+ * meaning the person's own. Exchange still decides whether they can open it.
+ */
+export async function resolveMailbox(value: unknown): Promise<string | null> {
+  if (typeof value !== "string" || !value) return null;
+  const wanted = value.trim().toLowerCase();
+  return (await listSharedMailboxes()).find((m) => m.toLowerCase() === wanted) ?? null;
+}

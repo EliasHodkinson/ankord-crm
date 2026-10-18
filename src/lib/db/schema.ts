@@ -780,6 +780,12 @@ export const settings = pgTable("settings", {
    * folders entirely.
    */
   spLeadFolder: text("sp_lead_folder").default("Leads"),
+  /**
+   * Shared mailboxes people may link email from, as addresses. Graph cannot
+   * list the mailboxes a person can open, so an admin names them here; Exchange
+   * still decides, per person, whether each one actually opens.
+   */
+  sharedMailboxes: text("shared_mailboxes").array().notNull().default(sql`ARRAY[]::text[]`),
 
   /* How long something can sit untouched before the CRM says something */
   staleLeadDays: integer("stale_lead_days").notNull().default(7),

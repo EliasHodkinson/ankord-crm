@@ -30,7 +30,7 @@ export function AddPersonForm({ customers }: { customers: PickerCustomer[] }) {
             type="email"
             required
             autoComplete="off"
-            hint="Their own address for a guest; their Ankor'd address for staff."
+            hint="Their Ankor'd account if they have one (such as va@ankord.com.au); their own email for a guest."
           />
         </FormRow>
         <FormRow>

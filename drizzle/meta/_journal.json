@@ -85,6 +85,13 @@
       "when": 1792293080419,
       "tag": "0011_access_control",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1792294715697,
+      "tag": "0012_shared_mailboxes",
+      "breakpoints": true
     }
   ]
 }

@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { count, eq, not, like, or } from "drizzle-orm";
-import { ACCESS_ADMIN_SCOPE_STRING, exchangeCode } from "@/lib/auth/entra";
+import { exchangeCode, isScopeSet, scopeStringFor } from "@/lib/auth/entra";
 import { createSession, verifyIdToken } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { users } from "@/lib/db/schema";
@@ -34,12 +34,9 @@ export async function GET(request: NextRequest) {
 
   let userId: string;
   try {
-    const elevated = request.cookies.get("ankord_scopes")?.value === "access";
-    const tokens = await exchangeCode(
-      code,
-      verifier,
-      elevated ? ACCESS_ADMIN_SCOPE_STRING : undefined,
-    );
+    // The same scope sets the sign-in route asked for.
+    const sets = (request.cookies.get("ankord_scopes")?.value ?? "").split(",").filter(isScopeSet);
+    const tokens = await exchangeCode(code, verifier, scopeStringFor(sets));
     if (!tokens.id_token) return failure(request, "Microsoft did not return an identity token.");
 
     const claims = await verifyIdToken(tokens.id_token);
@@ -99,10 +96,11 @@ export async function GET(request: NextRequest) {
       // The first person through the door administers the CRM. Accounts made
       // by scripts/dev-session.ts do not count — they carry a synthetic oid.
       //
-      // A guest nobody added in Settings starts restricted with no grants, so
-      // they see an empty CRM rather than every customer: being a guest in the
-      // tenant (for a Teams channel, a shared file) is not a reason to see the
-      // book. An admin grants them what they need.
+      // Anyone else nobody added in Settings starts restricted with no grants,
+      // and sees an empty CRM until an admin decides otherwise. Having an
+      // account in the tenant — a VA's licensed mailbox account, a guest added
+      // for a Teams channel — is not a reason to see the book. Staff who hold
+      // an Entra app role get that role straight away, as before.
       const [{ total }] = await db
         .select({ total: count() })
         .from(users)
@@ -117,7 +115,7 @@ export async function GET(request: NextRequest) {
           jobTitle: profile?.jobTitle ?? null,
           photo,
           isGuest,
-          role: entraRole ?? (isGuest ? "restricted" : total === 0 ? "admin" : "member"),
+          role: entraRole ?? (total === 0 && !isGuest ? "admin" : "restricted"),
           roleSource: entraRole ? "entra" : "manual",
           lastSeenAt: new Date(),
         })

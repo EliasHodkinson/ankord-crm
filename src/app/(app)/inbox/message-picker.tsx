@@ -32,12 +32,15 @@ export type LinkTarget = {
  * CRM is shown but not selectable, so nothing gets attached twice.
  */
 export function MessagePicker({
+  mailbox,
   messages,
   targets,
   defaultCustomerId,
   defaultProjectId,
   defaultLeadId,
 }: {
+  /** The shared mailbox these came from, or null for the person's own. */
+  mailbox?: string | null;
   messages: PickableMessage[];
   targets: LinkTarget;
   defaultCustomerId?: string;
@@ -66,7 +69,7 @@ export function MessagePicker({
     return (
       <EmptyState
         title="No messages found"
-        description="Search by a person's name, an email address, or a subject line. The search runs against your own Outlook mailbox — you will only ever see what you can already see there."
+        description="Search by a person's name, an email address, or a subject line. The search runs against the mailbox you picked — your own, or a shared one Exchange lets you open — so you will only ever see what you can already see in Outlook."
       />
     );
   }
@@ -74,6 +77,7 @@ export function MessagePicker({
   return (
     <ActionForm action={linkEmails} className="flex flex-col gap-4">
       <input type="hidden" name="leadId" value={defaultLeadId ?? ""} />
+      <input type="hidden" name="mailbox" value={mailbox ?? ""} />
 
       {/* The link bar sticks so the choice stays reachable down a long list */}
       <div className="sticky top-14 z-30 flex flex-wrap items-center gap-2 rounded-[10px] border border-[var(--border)] bg-[var(--surface)]/95 p-2.5 shadow-[var(--shadow-sm)] backdrop-blur-md">

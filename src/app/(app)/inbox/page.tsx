@@ -1,14 +1,17 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { asc, eq, inArray } from "drizzle-orm";
-import { AlertTriangle, Mail } from "lucide-react";
+import { AlertTriangle, KeyRound, Mail } from "lucide-react";
 import { PageBody, PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
 import { FilterBar } from "@/components/app/filter-bar";
 import { MessagePicker, type PickableMessage } from "./message-picker";
 import { getDb } from "@/lib/db";
 import { communications, contacts, customers, leads, projects } from "@/lib/db/schema";
-import { getGraphToken, requireUser } from "@/lib/auth/session";
+import { getGraphToken, requireUser, sessionScopes } from "@/lib/auth/session";
+import { hasScopeSet } from "@/lib/auth/entra";
+import { listSharedMailboxes, resolveMailbox } from "@/lib/data/common";
+import { ButtonLink } from "@/components/ui/button";
 import { canSeeCustomer, customerScope, getAccess } from "@/lib/access";
 import {
   addressOf,
@@ -29,12 +32,27 @@ export const dynamic = "force-dynamic";
 export default async function InboxPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; customer?: string; project?: string; lead?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    customer?: string;
+    project?: string;
+    lead?: string;
+    mailbox?: string;
+  }>;
 }) {
   await requireUser();
   const access = await getAccess();
-  const { q, customer, project, lead } = await searchParams;
+  const { q, customer, project, lead, mailbox: requestedMailbox } = await searchParams;
   const db = getDb();
+
+  // Their own mailbox, or a shared one an admin has listed. Reading a shared
+  // mailbox needs Mail.Read.Shared, asked for the first time it is wanted.
+  const [sharedMailboxes, mailbox, scopes] = await Promise.all([
+    listSharedMailboxes(),
+    resolveMailbox(requestedMailbox),
+    sessionScopes(),
+  ]);
+  const needsSharedScope = Boolean(mailbox) && !hasScopeSet(scopes, "shared-mail");
 
   // Only records this person may file against. A restricted person gets no
   // leads at all, and only their own partners and those partners' projects.
@@ -95,17 +113,19 @@ export default async function InboxPage({
   let messages: GraphMessage[] = [];
   let graphError: string | null = null;
 
-  try {
-    const token = await getGraphToken();
-    if (q?.trim()) {
-      messages = await searchMessages(token, q.trim());
-    } else if (seedAddresses.length > 0) {
-      messages = await messagesWithAddresses(token, seedAddresses);
-    } else {
-      messages = await recentMessages(token, 30);
+  if (!needsSharedScope) {
+    try {
+      const token = await getGraphToken();
+      if (q?.trim()) {
+        messages = await searchMessages(token, q.trim(), 40, mailbox);
+      } else if (seedAddresses.length > 0) {
+        messages = await messagesWithAddresses(token, seedAddresses, 40, mailbox);
+      } else {
+        messages = await recentMessages(token, 30, mailbox);
+      }
+    } catch (error) {
+      graphError = describeGraphFailure(error);
     }
-  } catch (error) {
-    graphError = describeGraphFailure(error);
   }
 
   // Mark anything already in the CRM so it cannot be linked twice.
@@ -167,10 +187,46 @@ export default async function InboxPage({
 
       <PageBody className="flex flex-col gap-4">
         <FilterBar
-          searchPlaceholder="Search your mailbox — name, address or subject…"
+          searchPlaceholder={
+            mailbox
+              ? `Search ${mailbox} — name, address or subject…`
+              : "Search your mailbox — name, address or subject…"
+          }
+          filters={
+            sharedMailboxes.length
+              ? [
+                  {
+                    param: "mailbox",
+                    label: "Mailbox",
+                    defaultValue: "",
+                    options: [
+                      { value: "", label: "My mailbox" },
+                      ...sharedMailboxes.map((m) => ({ value: m, label: m })),
+                    ],
+                  },
+                ]
+              : []
+          }
         />
 
-        {graphError ? (
+        {needsSharedScope ? (
+          <div className="flex flex-col gap-2.5 rounded-[10px] border border-[var(--warn)]/30 bg-[var(--warn-bg)] px-4 py-3 sm:flex-row sm:items-center">
+            <KeyRound className="size-4 shrink-0 text-[var(--warn)]" />
+            <p className="flex-1 text-[12px] leading-5 text-[var(--text-muted)]">
+              Reading {mailbox} needs one more Microsoft permission on your sign-in,{" "}
+              <code className="font-mono text-[11px]">Mail.Read.Shared</code>. You will still only
+              see the mailboxes Exchange already lets you open in Outlook.
+            </p>
+            <ButtonLink
+              href={`/api/auth/signin?scopes=shared-mail&next=${encodeURIComponent(`/inbox?mailbox=${mailbox}`)}`}
+              size="sm"
+              variant="secondary"
+              prefetch={false}
+            >
+              Allow shared mailboxes
+            </ButtonLink>
+          </div>
+        ) : graphError ? (
           <div
             role="alert"
             className="flex items-start gap-2.5 rounded-[10px] border border-[var(--danger)]/30 bg-[var(--danger-bg)] px-4 py-3"
@@ -194,6 +250,7 @@ export default async function InboxPage({
           </div>
         ) : (
           <MessagePicker
+            mailbox={mailbox}
             messages={pickable}
             targets={{ customers: customerList, projects: projectList, leads: leadList }}
             defaultCustomerId={contextCustomerId}

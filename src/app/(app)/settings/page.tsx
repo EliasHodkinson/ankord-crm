@@ -7,6 +7,7 @@ import { DataRow } from "@/components/ui/field";
 import { LibraryPicker } from "./library-picker";
 import { XeroPanel } from "./xero-panel";
 import { TeamsPanel } from "./teams-panel";
+import { SharedMailboxesForm } from "./shared-mailboxes-form";
 import { getDb } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { getSettings } from "@/lib/data/common";
@@ -165,6 +166,24 @@ export default async function SettingsPage({
                 ) : (
                   "An administrator needs to connect a SharePoint document library before files can be stored against customers and projects."
                 )}
+              </p>
+            )}
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader
+            title="Shared mailboxes"
+            meta="Mailboxes Link email can read from, besides each person's own"
+          />
+          <CardBody>
+            {isAdmin ? (
+              <SharedMailboxesForm mailboxes={settings?.sharedMailboxes ?? []} />
+            ) : (
+              <p className="text-[13px] leading-6 text-[var(--text-muted)]">
+                {settings?.sharedMailboxes.length
+                  ? `Link email can read ${settings.sharedMailboxes.join(", ")} for anyone Exchange lets open them.`
+                  : "None listed. An administrator can add shared mailboxes here."}
               </p>
             )}
           </CardBody>

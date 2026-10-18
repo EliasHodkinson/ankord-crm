@@ -1,10 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 import {
-  ACCESS_ADMIN_SCOPE_STRING,
   buildAuthorizeUrl,
   codeChallengeFor,
+  grantedScopeSets,
+  isScopeSet,
   randomUrlSafe,
+  scopeStringFor,
 } from "@/lib/auth/entra";
+import { sessionScopes } from "@/lib/auth/session";
 import { isAuthConfigured } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
@@ -19,10 +22,18 @@ export async function GET(request: NextRequest) {
   const verifier = randomUrlSafe(48);
   const state = randomUrlSafe(24);
   const next = request.nextUrl.searchParams.get("next") ?? "/";
-  // Settings → People and access sends an admin back through sign-in to pick
-  // up the scopes for inviting guests. Anyone can ask; Entra only issues them
-  // where consent exists, and the CRM only uses them behind requireAdmin.
-  const elevated = request.nextUrl.searchParams.get("scopes") === "access";
+  // A feature that needs an optional scope set sends the person back through
+  // sign-in for it (see OPTIONAL_SCOPES). The sets this session already holds
+  // are asked for again, so picking up one never drops another. Anyone can ask;
+  // Entra only issues what has been consented, and the CRM's own checks still
+  // decide who may use what.
+  const asked = request.nextUrl.searchParams.get("scopes");
+  const sets = [
+    ...new Set([
+      ...grantedScopeSets(await sessionScopes().catch(() => null)),
+      ...(isScopeSet(asked) ? [asked] : []),
+    ]),
+  ];
 
   const target = buildAuthorizeUrl({
     state,
@@ -31,7 +42,7 @@ export async function GET(request: NextRequest) {
     prompt: request.nextUrl.searchParams.get("prompt") === "select_account"
       ? "select_account"
       : undefined,
-    scope: elevated ? ACCESS_ADMIN_SCOPE_STRING : undefined,
+    scope: sets.length ? scopeStringFor(sets) : undefined,
   });
 
   const response = NextResponse.redirect(target);
@@ -51,7 +62,7 @@ export async function GET(request: NextRequest) {
     next.startsWith("/") && !next.startsWith("//") ? next : "/",
     options,
   );
-  if (elevated) response.cookies.set("ankord_scopes", "access", options);
+  if (sets.length) response.cookies.set("ankord_scopes", sets.join(","), options);
   else response.cookies.delete("ankord_scopes");
   return response;
 }

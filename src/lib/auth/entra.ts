@@ -25,27 +25,52 @@ export const GRAPH_SCOPES = [
 export const SCOPE_STRING = GRAPH_SCOPES.join(" ");
 
 /**
- * Asked for only when an admin chooses to manage people from Settings, never
- * at an ordinary sign-in — so nobody else is prompted for them, and the app
- * still signs in before an administrator has consented to them.
+ * Scopes asked for only when someone chooses a feature that needs them, never
+ * at an ordinary sign-in — so nobody is prompted for what they will not use,
+ * and the app still signs in before an administrator has consented to them.
+ * A session keeps every set it has been granted across refreshes.
  *
- * - `User.Invite.All` invites a VA or contractor into the tenant as a B2B
- *   guest. Bounded by the admin's own directory role: they also need to be
+ * - `access` — `User.Invite.All`, for an admin inviting a VA or contractor as a
+ *   B2B guest. Bounded by the admin's own directory role: they also need to be
  *   allowed to invite guests (Guest Inviter, User Administrator, or the tenant
- *   letting members invite).
- *
- * Sharing the customer folder needs nothing new — driveItem invite and
- * permission delete are covered by Sites.ReadWrite.All, bounded by the admin's
- * own rights on the site.
+ *   letting members invite). Sharing customer folders needs nothing new —
+ *   driveItem invite and permission delete are covered by Sites.ReadWrite.All,
+ *   bounded by the admin's own rights on the site.
+ * - `shared-mail` — `Mail.Read.Shared`, for linking email from a shared
+ *   mailbox. Bounded by Exchange: only mailboxes the person can already open
+ *   in Outlook.
  */
-export const ACCESS_ADMIN_SCOPES = ["User.Invite.All"] as const;
+export const OPTIONAL_SCOPES = {
+  access: ["User.Invite.All"],
+  "shared-mail": ["Mail.Read.Shared"],
+} as const satisfies Record<string, readonly string[]>;
 
-export const ACCESS_ADMIN_SCOPE_STRING = [...GRAPH_SCOPES, ...ACCESS_ADMIN_SCOPES].join(" ");
+export type ScopeSet = keyof typeof OPTIONAL_SCOPES;
+
+export const isScopeSet = (value: unknown): value is ScopeSet =>
+  typeof value === "string" && value in OPTIONAL_SCOPES;
+
+/** Graph may report scopes bare or as full URIs; compare them bare. */
+const bare = (scope: string) => scope.replace(/^https:\/\/graph\.microsoft\.com\//i, "").toLowerCase();
+
+/** The optional sets a granted scope string covers. */
+export function grantedScopeSets(scope: string | null | undefined): ScopeSet[] {
+  const granted = new Set((scope ?? "").split(/\s+/).filter(Boolean).map(bare));
+  return (Object.keys(OPTIONAL_SCOPES) as ScopeSet[]).filter((set) =>
+    OPTIONAL_SCOPES[set].every((s) => granted.has(bare(s))),
+  );
+}
+
+export const hasScopeSet = (scope: string | null | undefined, set: ScopeSet) =>
+  grantedScopeSets(scope).includes(set);
 
 /** Whether a granted scope list includes the people-management scopes. */
-export function hasAccessAdminScopes(scope: string | null | undefined): boolean {
-  const granted = new Set((scope ?? "").split(/\s+/).map((s) => s.toLowerCase()));
-  return ACCESS_ADMIN_SCOPES.every((s) => granted.has(s.toLowerCase()));
+export const hasAccessAdminScopes = (scope: string | null | undefined) =>
+  hasScopeSet(scope, "access");
+
+/** The ordinary scopes plus the given optional sets. */
+export function scopeStringFor(sets: readonly ScopeSet[]): string {
+  return [...GRAPH_SCOPES, ...sets.flatMap((set) => OPTIONAL_SCOPES[set])].join(" ");
 }
 
 const authority = () =>
