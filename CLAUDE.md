@@ -25,7 +25,19 @@ before touching anything visual.
 - Microsoft tokens are encrypted with `APP_ENCRYPTION_KEY` and stored per
   session, so deleting a session revokes Graph access with it.
 - Graph is always called with the signed-in person's delegated token. There is
-  no service account, and `Mail.Send` is not requested.
+  no service account. `Mail.Send`/`Mail.Send.Shared` are an on-demand scope set
+  (`marketing`) asked for only by someone sending a campaign; nothing outside
+  Campaigns sends mail.
+- Campaigns (`lib/campaigns`, README §9) send in the background with
+  the token of the session that pressed Send (`campaigns.sendSessionId`,
+  `graphTokenForSession`), never anyone else's. Recipients are claimed with
+  SKIP LOCKED and a claimed-but-unconfirmed send is failed, never retried.
+  Email HTML is built only by `renderEmail()` (pure, shared by the editor
+  preview and the sender); block and theme input goes through `cleanBlocks` /
+  `cleanTheme`, because theme values land in inline styles. Unsubscribing is
+  an address-level row in `email_suppressions`, and happens only on the POST
+  from `/m/u/<token>` — mail scanners follow GETs. Sending a campaign is not
+  activity: never `touchRecords()` for it.
 - Forms use `ActionForm`, which retains typed values across a failed submit —
   React 19 otherwise resets uncontrolled inputs once an action resolves. New
   fields should go through `form-kit.tsx` so they inherit that.

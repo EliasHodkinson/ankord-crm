@@ -264,7 +264,21 @@ export class GraphAuthError extends Error {
 export async function getGraphToken(): Promise<string> {
   const sid = (await currentSession())?.sid;
   if (!sid) throw new GraphAuthError("Not signed in.");
+  return graphTokenForSession(sid);
+}
 
+/** The id of the session this request acts as — what a campaign records as its sender. */
+export async function currentSessionId(): Promise<string | null> {
+  return (await currentSession())?.sid ?? null;
+}
+
+/**
+ * A Graph token for a named session, for work that carries on after the
+ * request that started it — a campaign sending in the background. Still that
+ * person's own delegated token: when their session is deleted (sign-out, an
+ * admin ending it, suspension) this throws, and the work stops with it.
+ */
+export async function graphTokenForSession(sid: string): Promise<string> {
   const db = getDb();
   const [row] = await db.select().from(sessions).where(eq(sessions.id, sid)).limit(1);
   if (!row) throw new GraphAuthError("Session has expired.");

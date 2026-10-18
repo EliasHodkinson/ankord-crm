@@ -132,6 +132,8 @@ export function registerRecordWriteTools(server: McpServer) {
           dietary: contact.dietary,
           pronouns: contact.pronouns,
           preferredContact: contact.preferredContact,
+          // Not editable here, but carried so an update never clears it.
+          marketingConsent: contact.marketingConsent,
           notes: contact.notes,
         };
         for (const [key, value] of Object.entries(patch)) {

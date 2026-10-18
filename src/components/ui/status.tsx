@@ -315,6 +315,46 @@ export const AMOUNTS_ARE: Record<string, { label: string }> = {
   no_tax: { label: "No tax" },
 };
 
+/* ── email marketing ─────────────────────────────────────────────── */
+
+export const CAMPAIGN_STATUS: Record<string, Entry> = {
+  draft: { label: "Draft", tone: "neutral" },
+  scheduled: { label: "Scheduled", tone: "info" },
+  sending: { label: "Sending", tone: "accent" },
+  testing: { label: "A/B testing", tone: "accent" },
+  paused: { label: "Paused", tone: "warn" },
+  sent: { label: "Sent", tone: "ok" },
+  cancelled: { label: "Cancelled", tone: "muted" },
+};
+
+export const RECIPIENT_STATUS: Record<string, Entry> = {
+  queued: { label: "Queued", tone: "neutral" },
+  held: { label: "Waiting for winner", tone: "info" },
+  sending: { label: "Sending", tone: "accent" },
+  sent: { label: "Sent", tone: "ok" },
+  failed: { label: "Failed", tone: "danger" },
+  skipped: { label: "Not sent", tone: "muted" },
+};
+
+/** Spam Act consent, as recorded against a person. */
+export const MARKETING_CONSENT: Record<string, Entry> = {
+  express: { label: "Opted in", tone: "ok" },
+  inferred: { label: "Existing relationship", tone: "brand" },
+  none: { label: "Not recorded", tone: "muted" },
+};
+
+export const MARKETING_CONSENT_HINT: Record<string, string> = {
+  express: "They asked to hear from us — a sign-up, a form, or a yes in writing.",
+  inferred: "A current business relationship where marketing email would be expected.",
+  none: "Nothing recorded yet. Campaigns can still reach them unless you filter on consent.",
+};
+
+export const SUPPRESSION_REASON: Record<string, Entry> = {
+  unsubscribed: { label: "Unsubscribed", tone: "warn" },
+  bounced: { label: "Bounced", tone: "danger" },
+  manual: { label: "Removed by hand", tone: "neutral" },
+};
+
 export function StatusBadge({
   map,
   value,

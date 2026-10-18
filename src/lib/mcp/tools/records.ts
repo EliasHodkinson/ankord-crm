@@ -31,7 +31,9 @@ import { listItems } from "@/lib/data/items";
 import { shipmentsFor, trackingForSales } from "@/lib/data/stock";
 import { DOC_TYPES, type DocType } from "@/lib/sales/doc-types";
 import { appUrl } from "@/lib/env";
-import { read } from "../run";
+import { read, sydneyTime } from "../run";
+import { campaignReport, getCampaign, listCampaigns } from "@/lib/data/campaigns";
+import { percent } from "@/lib/campaigns/model";
 
 const READ = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 
@@ -220,6 +222,85 @@ export function registerRecordTools(server: McpServer) {
           url: link(`/leads/${id}`),
           recentCommunications: communications.map(timelineRow),
           openTasks: tasks.map(taskRow),
+        };
+      }),
+  );
+
+  /* ── email campaigns (staff) ───────────────────────────────────── */
+
+  server.registerTool(
+    "list_campaigns",
+    {
+      title: "List email campaigns",
+      description:
+        "Marketing email campaigns (staff only), newest first, with recipients, sent, unique opens and clicks, unsubscribes and bounces. Statuses: drafts, active (scheduled, sending, testing, paused), sent. Read-only — campaigns are written and sent from The Gangway itself, never through this connection.",
+      inputSchema: z.object({
+        query: z.string().optional(),
+        status: z.enum(["all", "drafts", "active", "sent"]).default("all"),
+        limit: z.number().int().min(1).max(100).default(20),
+      }),
+      annotations: READ,
+    },
+    ({ query, status, limit }) =>
+      read(async () => {
+        if ((await getAccess()).restricted) return null;
+        const rows = await listCampaigns({ q: query, status });
+        return rows.slice(0, limit).map(({ campaign: c, stats, senderName }) => ({
+          id: c.id,
+          name: c.name,
+          subject: c.subject,
+          status: c.status,
+          from: c.fromAddress ?? c.fromMode,
+          sender: senderName,
+          scheduledAt: c.scheduledAt ? sydneyTime(c.scheduledAt) : null,
+          startedAt: c.startedAt ? sydneyTime(c.startedAt) : null,
+          ...stats,
+          openRate: percent(stats.opened, stats.sent),
+          clickRate: percent(stats.clicked, stats.sent),
+          url: `${appUrl()}/campaigns/${c.id}`,
+        }));
+      }),
+  );
+
+  server.registerTool(
+    "get_campaign_report",
+    {
+      title: "Get an email campaign's report",
+      description:
+        "One campaign's results: totals, each link with its clicks, the subject-line test if there was one, and the most engaged recipients. Opens are approximate (Apple Mail opens everything); clicks are the better signal.",
+      inputSchema: z.object({ id: z.uuid() }),
+      annotations: READ,
+    },
+    ({ id }) =>
+      read(async () => {
+        if ((await getAccess()).restricted) return null;
+        const found = await getCampaign(id);
+        if (!found) return null;
+        const report = await campaignReport(id);
+        const { campaign: c, stats } = found;
+        return {
+          name: c.name,
+          subject: c.subject,
+          status: c.status,
+          lastError: c.lastError,
+          ...stats,
+          openRate: percent(stats.opened, stats.sent),
+          clickRate: percent(stats.clicked, stats.sent),
+          abTest: c.abTest?.subjectB
+            ? { a: { subject: c.subject, ...report.variants.a }, b: { subject: c.abTest.subjectB, ...report.variants.b }, winner: c.abWinner }
+            : null,
+          links: report.links.map((l) => ({ url: l.url, label: l.label, clicks: l.clicks, people: l.people })),
+          topRecipients: report.recipients.slice(0, 25).map((r) => ({
+            name: [r.firstName, r.lastName].filter(Boolean).join(" ") || null,
+            email: r.email,
+            company: r.company,
+            status: r.status,
+            opens: r.openCount,
+            clicks: r.clickCount,
+            unsubscribed: Boolean(r.unsubscribedAt),
+            bounced: Boolean(r.bouncedAt),
+          })),
+          url: `${appUrl()}/campaigns/${c.id}`,
         };
       }),
   );
