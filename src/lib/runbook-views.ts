@@ -31,6 +31,23 @@ export type PlacedStep = {
   warning: string | null;
 };
 
+/* ───────────────────────── blockers ───────────────────────── */
+
+/**
+ * A step reads as a blocker two ways: its status is Blocked, or it carries the
+ * template's free-text BLOCKER tag ("this gates the phase"). Either one can be
+ * cleared with `clearStepBlocker`; a finished step is never a live blocker.
+ */
+export function isBlockerTag(tag: string | null | undefined): boolean {
+  return tag?.trim().toUpperCase() === "BLOCKER";
+}
+
+export function blockerOf(step: Pick<PlacedStep, "status" | "tag">): "blocked" | "tagged" | null {
+  if (step.status === "blocked") return "blocked";
+  if (step.status === "done" || step.status === "not_applicable") return null;
+  return isBlockerTag(step.tag) ? "tagged" : null;
+}
+
 /* ───────────────────────── days ───────────────────────── */
 
 /** `YYYY-MM-DD` → local midnight. Anything else → null. */

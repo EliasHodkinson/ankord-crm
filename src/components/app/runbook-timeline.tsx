@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
 import { StepChip, useStepHref, TIMING_DOT, TIMING_TEXT, timingNote } from "./step-chip";
-import { stepStatusLabel } from "./step-status";
+import { ClearBlockerButton, stepStatusLabel, stepStatusMeta } from "./step-status";
 import {
   axisOf,
   monthTickLabel,
@@ -13,6 +13,7 @@ import {
   positionOn,
   spanOf,
   startOfToday,
+  blockerOf,
   timingOf,
   type PlacedStep,
   type Span,
@@ -219,7 +220,9 @@ function StepRow({
   const due = parseDay(step.dueDate);
   const timing = timingOf(step);
   const note = timingNote(timing);
+  const blocked = blockerOf(step) === "blocked";
   if (!due) return null;
+  const BlockedIcon = stepStatusMeta("blocked").icon;
 
   const at = positionOn(axis, due);
   // Keep the caption inside the track at both ends.
@@ -284,9 +287,13 @@ function StepRow({
             {formatDate(step.dueDate, "day")}
             {note ? ` · ${note}` : ""}
           </span>
+          {blocked ? (
+            <BlockedIcon aria-hidden className="size-3 shrink-0 text-[var(--danger)]" />
+          ) : null}
           {step.warning ? (
             <AlertTriangle aria-hidden className="size-3 shrink-0 text-[var(--warn)]" />
           ) : null}
+          <ClearBlockerButton step={step} compact />
         </span>
       </div>
     </div>

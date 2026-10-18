@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { AlertTriangle } from "lucide-react";
-import { stepStatusLabel, stepStatusMeta } from "./step-status";
-import { timingOf, type PlacedStep, type StepTiming } from "@/lib/runbook-views";
+import { ClearBlockerButton, stepStatusLabel, stepStatusMeta } from "./step-status";
+import { STEP_BLOCKER } from "@/components/ui/status";
+import { blockerOf, timingOf, type PlacedStep, type StepTiming } from "@/lib/runbook-views";
 import { cn, formatDate } from "@/lib/utils";
 
 /**
@@ -70,8 +71,9 @@ export function StepChip({
   const timing = timingOf(step);
   const Icon = stepStatusMeta(step.status).icon;
   const note = timingNote(timing);
+  const blocker = blockerOf(step);
 
-  return (
+  const chip = (
     <Link
       href={href}
       scroll={false}
@@ -81,12 +83,13 @@ export function StepChip({
         step.ownerLabel,
         step.dueDate ? `Due ${formatDate(step.dueDate)}` : null,
         note,
+        blocker === "tagged" ? STEP_BLOCKER.tagged.label : null,
         step.warning ? "Has a warning" : null,
       ]
         .filter(Boolean)
         .join(" · ")}
       className={cn(
-        "group flex w-full items-center gap-1 rounded-md border px-1.5 py-1 text-left",
+        "group flex w-full min-w-0 items-center gap-1 rounded-md border px-1.5 py-1 text-left",
         "transition-colors duration-150",
         timing === "overdue"
           ? "border-[var(--danger)]/35 bg-[var(--danger-bg)]"
@@ -127,5 +130,15 @@ export function StepChip({
         <AlertTriangle aria-hidden className="size-3 shrink-0 text-[var(--warn)]" />
       ) : null}
     </Link>
+  );
+
+  if (!blocker) return chip;
+
+  // The way out sits beside the link, never inside it.
+  return (
+    <span className="flex w-full items-center gap-1">
+      {chip}
+      <ClearBlockerButton step={step} compact />
+    </span>
   );
 }

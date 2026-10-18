@@ -5,7 +5,9 @@ import Link from "next/link";
 import { AlertTriangle, GripVertical } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
+import { stepTagTone } from "@/components/ui/status";
 import {
+  ClearBlockerButton,
   StatusControl,
   STEP_STATUS_ORDER,
   stepStatusLabel,
@@ -206,7 +208,7 @@ function BoardCard({
             {phase.num}
           </span>
         ) : null}
-        {step.tag ? <Badge tone="neutral">{step.tag}</Badge> : null}
+        {step.tag ? <Badge tone={stepTagTone(step.tag, step.status)}>{step.tag}</Badge> : null}
         {step.warning ? (
           <AlertTriangle
             className="size-3 text-[var(--warn)]"
@@ -229,6 +231,8 @@ function BoardCard({
           Waiting on {step.blockedOn}
         </p>
       ) : null}
+
+      <ClearBlockerButton step={step} className="mt-2 ml-5" />
     </article>
   );
 }

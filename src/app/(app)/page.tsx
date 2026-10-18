@@ -9,6 +9,7 @@ import {
   Target,
 } from "lucide-react";
 import { PageBody, PageHeader } from "@/components/app/page-header";
+import { ClearBlockerButton } from "@/components/app/step-status";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ButtonLink } from "@/components/ui/button";
@@ -394,10 +395,10 @@ export default async function DashboardPage() {
             ) : (
               <ul className="divide-y divide-[var(--border-soft)]">
                 {blockedSteps.map(({ step, projectName, customerName }) => (
-                  <li key={step.id}>
+                  <li key={step.id} className="flex items-center hover:bg-[var(--surface-2)]">
                     <Link
-                      href={`/projects/${step.projectId}`}
-                      className="flex items-start gap-3 px-4 py-2.5 transition-colors hover:bg-[var(--surface-2)]"
+                      href={`/projects/${step.projectId}?step=${step.id}`}
+                      className="flex min-w-0 flex-1 items-start gap-3 py-2.5 pl-4 transition-colors"
                     >
                       <OctagonAlert className="mt-0.5 size-3.5 shrink-0 text-[var(--danger)]" />
                       <div className="min-w-0 flex-1">
@@ -417,6 +418,7 @@ export default async function DashboardPage() {
                         </span>
                       ) : null}
                     </Link>
+                    <ClearBlockerButton step={step} className="mx-4" />
                   </li>
                 ))}
               </ul>
@@ -437,10 +439,10 @@ export default async function DashboardPage() {
             ) : (
               <ul className="divide-y divide-[var(--border-soft)]">
                 {myWork.map(({ step, projectName }) => (
-                  <li key={step.id}>
+                  <li key={step.id} className="flex items-center hover:bg-[var(--surface-2)]">
                     <Link
-                      href={`/projects/${step.projectId}`}
-                      className="flex items-start gap-3 px-4 py-2.5 transition-colors hover:bg-[var(--surface-2)]"
+                      href={`/projects/${step.projectId}?step=${step.id}`}
+                      className="flex min-w-0 flex-1 items-start gap-3 py-2.5 pl-4 transition-colors"
                     >
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[13px] font-medium text-[var(--text)]">

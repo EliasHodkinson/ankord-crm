@@ -21,6 +21,7 @@ import { autoProvisionFolder } from "./files";
 import { notifyTeams } from "@/lib/notify";
 import { appUrl } from "@/lib/env";
 import { queuePlannerSync } from "@/lib/planner/push";
+import { isBlockerTag } from "@/lib/runbook-views";
 import {
   fail,
   fromZod,
@@ -220,12 +221,51 @@ export async function setStepStatus(
   return { ok: true };
 }
 
+/**
+ * Clears whatever makes a step read as a blocker (see `blockerOf`): a Blocked
+ * status goes back to In progress, a BLOCKER tag is dropped, and "waiting on"
+ * is emptied so it cannot resurface the next time the step is blocked. Any
+ * other tag, the warning and the notes are left as they are.
+ */
+export async function clearStepBlocker(stepId: string): Promise<ActionState> {
+  await requireUser();
+  const projectId = await assertStep(stepId);
+
+  const db = getDb();
+  const [step] = await db
+    .select({ status: projectSteps.status, tag: projectSteps.tag })
+    .from(projectSteps)
+    .where(eq(projectSteps.id, stepId))
+    .limit(1);
+  if (!step) return fail("That step no longer exists.");
+
+  const unblocking = step.status === "blocked";
+  await db
+    .update(projectSteps)
+    .set({
+      ...(unblocking ? { status: "in_progress" as const } : {}),
+      ...(isBlockerTag(step.tag) ? { tag: null } : {}),
+      blockedOn: null,
+      blockedSince: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(projectSteps.id, stepId));
+
+  if (unblocking) await touchRecords({ projectId });
+  queuePlannerSync(projectId);
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath("/");
+  return { ok: true };
+}
+
 const stepDetailSchema = z.object({
   projectId: z.uuid(),
   notes: optionalText,
   assigneeId: optionalUuid,
   dueDate: optionalDate,
   blockedOn: optionalText,
+  tag: optionalText,
+  warning: optionalText,
 });
 
 export async function updateStepDetail(
@@ -238,11 +278,19 @@ export async function updateStepDetail(
   if (!parsed.success) return fromZod(parsed.error);
 
   // The step's own project, not the one the form named.
-  const { notes, assigneeId, dueDate, blockedOn } = parsed.data;
+  const { notes, assigneeId, dueDate, blockedOn, tag, warning } = parsed.data;
   const projectId = await assertStep(stepId);
   await getDb()
     .update(projectSteps)
-    .set({ notes, assigneeId, dueDate, blockedOn, updatedAt: new Date() })
+    .set({
+      notes,
+      assigneeId,
+      dueDate,
+      blockedOn,
+      tag,
+      warning,
+      updatedAt: new Date(),
+    })
     .where(eq(projectSteps.id, stepId));
 
   queuePlannerSync(projectId);

@@ -45,6 +45,46 @@ export const STEP_STATUS: Record<string, Entry> = {
   not_applicable: { label: "N/A", tone: "muted" },
 };
 
+/** Runbook tags are free text; these are the ones worth colouring. */
+const STEP_TAG_TONE: Record<string, Tone> = {
+  CRITICAL: "danger",
+  URGENT: "danger",
+  SECURITY: "danger",
+  LAUNCH: "danger",
+  BLOCKER: "warn",
+  "DEPENDS ON INCUMBENT": "warn",
+  MONITOR: "warn",
+  "SIGN-OFF": "accent",
+  MILESTONE: "accent",
+  "QUICK WIN": "accent",
+  VERIFY: "ok",
+  CONFIRM: "ok",
+  AUDIT: "ok",
+  "CLOSE OUT": "ok",
+};
+
+/**
+ * A tag's tone. Once the step is finished its tag is history, not a call to
+ * action — a done step still tagged BLOCKER should not read as one.
+ */
+export function stepTagTone(tag: string, status?: string): Tone {
+  if (status === "done" || status === "not_applicable") return "muted";
+  return STEP_TAG_TONE[tag.trim().toUpperCase()] ?? "neutral";
+}
+
+/** How a step that is holding things up is described, wherever it shows. */
+export const STEP_BLOCKER = {
+  blocked: { label: "Blocked", tone: "danger" },
+  tagged: { label: "Blocker", tone: "warn" },
+  clear: "Clear blocker",
+  clearHint: "Marks it in progress and drops the blocker tag and who it was waiting on.",
+} as const satisfies {
+  blocked: Entry;
+  tagged: Entry;
+  clear: string;
+  clearHint: string;
+};
+
 export const PRIORITY: Record<string, Entry> = {
   low: { label: "Low", tone: "muted" },
   normal: { label: "Normal", tone: "neutral" },
