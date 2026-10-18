@@ -17,6 +17,8 @@ import {
 } from "@/components/ui/status";
 import { ContactsPanel } from "@/components/app/contacts-panel";
 import { Timeline } from "@/components/app/timeline";
+import { MarketingCard } from "@/components/app/marketing-card";
+import { marketingForCustomer } from "@/lib/data/campaigns";
 import { LogCommunication } from "@/components/app/log-communication";
 import { RecordTasks } from "@/components/app/record-tasks";
 import { TrackVisit } from "@/components/app/track-visit";
@@ -70,6 +72,7 @@ export default async function CustomerPage({
   // Xero is staff-only: balances and invoices are not part of what a partner
   // grant shares, and the link picker searches every Xero contact.
   const { restricted } = await getAccess();
+  const marketing = restricted ? null : await marketingForCustomer(id);
 
   const [entries, team, settings, folder, xero, xeroConn, partnerDocs] = await Promise.all([
     listCommunications({ customerId: id }),
@@ -408,6 +411,8 @@ export default async function CustomerPage({
               />
             </CardBody>
           </Card>
+
+          {marketing ? <MarketingCard marketing={marketing} /> : null}
 
           <Card>
             <CardHeader title="Account" />

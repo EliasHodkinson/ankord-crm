@@ -1,4 +1,13 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "crons": [{ "path": "/api/cron/xero-sync", "schedule": "*/5 * * * *" }]
+  "crons": [
+    {
+      "path": "/api/cron/xero-sync",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/campaigns",
+      "schedule": "* * * * *"
+    }
+  ]
 }

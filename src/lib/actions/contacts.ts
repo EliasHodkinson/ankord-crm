@@ -38,6 +38,11 @@ const contactSchema = z.object({
   dietary: optionalText,
   pronouns: optionalText,
   preferredContact: optionalText,
+  /** Spam Act consent for campaigns. "none" from the form is not recorded. */
+  marketingConsent: z.preprocess(
+    (v) => (v === "none" ? null : emptyToNull(v)),
+    z.enum(["express", "inferred"]).nullable(),
+  ),
   notes: optionalText,
 });
 

@@ -6,7 +6,8 @@ files and email all run through the Ankor'd Microsoft 365 tenant.
 
 - **Auth** — Microsoft Entra ID, single tenant, delegated permissions
 - **Files** — SharePoint, browsed and uploaded from inside the CRM
-- **Email** — messages linked from Outlook, shared with the team
+- **Email** — messages linked from Outlook, shared with the team, and
+  marketing campaigns sent through Exchange as the person sending them
 - **Data** — Neon Postgres via Drizzle
 - **Runs on** — Next.js 16 (App Router), React 19, Tailwind v4, Vercel
 
@@ -25,6 +26,7 @@ files and email all run through the Ankor'd Microsoft 365 tenant.
 | **Runbook projects** | Numbered phases and steps with owners, warnings, checklists, key contacts and an account register |
 | **Microsoft Planner** | Each project can be kept in two-way sync with a Planner plan — create a plan from a project, a project from a plan, or link the two |
 | **Sales** | Quotes → sales orders → invoices, with partial quantities. Quotes and invoices are created in Xero as drafts and take Xero's number; they are sent from Xero. Sales orders stay here and show, per line, what still needs ordering |
+| **Campaigns** | Marketing email built in a block editor from Ankor'd starters or the team's templates, sent to an audience built from partners, people and leads, as you or as the marketing mailbox. Test sends, scheduling, subject-line A/B tests, open and click tracking, unsubscribe and bounce handling, follow-ups to non-openers. See [Email marketing](#9-email-marketing) |
 | **Items** | What Ankor'd sells and buys, with the Xero accounts and tax rates each line is coded to. Saved in Xero as untracked items |
 
 ---
@@ -63,12 +65,16 @@ rotating.
 | `Sites.ReadWrite.All` | Reading and writing the client files in SharePoint, and sharing a client folder with a restricted person |
 | `User.Invite.All` | **Admins only, asked for on demand** — inviting a VA or contractor as a B2B guest. See [People and access](#7-people-and-access) |
 | `Tasks.ReadWrite` | Mirroring follow-ups into Microsoft To Do, and reading and writing Planner plans, buckets and tasks |
-| `Mail.Read.Shared` | **Asked for on demand** — linking email from a shared mailbox the person can already open in Outlook |
+| `Mail.Read.Shared` | **Asked for on demand** — linking email from a shared mailbox the person can already open in Outlook, and reading bounce notices back from the marketing mailbox |
+| `Mail.Send` | **Asked for on demand** — sending a campaign (or a test of one) from your own mailbox |
+| `Mail.Send.Shared` | **Asked for on demand** — sending a campaign as the marketing mailbox. Exchange still decides: only people with Send As on it can |
 | `GroupMember.Read.All` | Naming the Microsoft 365 groups a person belongs to, so they can choose where a Planner plan lives |
 
 Everything is **delegated**, so the CRM only ever sees what the signed-in
 person can already see. There is no application permission and no service
-account. `Mail.Send` is deliberately not requested — the CRM never sends mail.
+account. `Mail.Send` is requested only by someone who sends a campaign, and
+only Campaigns ever sends mail — nothing else in the CRM does, and nothing
+sends without a person pressing Send.
 
 > **Adding a permission to an existing deployment:** grant admin consent for it
 > *before* deploying the code that requests it. The CRM asks for every scope
@@ -76,11 +82,12 @@ account. `Mail.Send` is deliberately not requested — the CRM never sends mail.
 > renewal fail and signs everyone out until consent is granted. After consent,
 > people pick the new permission up the next time they sign in.
 
-`User.Invite.All` and `Mail.Read.Shared` are not part of an ordinary sign-in.
-Each is requested only when someone first needs it — **Allow inviting guests**
-in Settings → People and access, **Allow shared mailboxes** on Link email — so
-nobody is prompted for what they will not use, and sign-in keeps working before
-they have been consented. Grant admin consent for both along with the others.
+`User.Invite.All`, `Mail.Read.Shared`, `Mail.Send` and `Mail.Send.Shared` are
+not part of an ordinary sign-in. Each is requested only when someone first
+needs it — **Allow inviting guests** in Settings → People and access, **Allow
+shared mailboxes** on Link email, **Allow sending** in Campaigns — so nobody is
+prompted for what they will not use, and sign-in keeps working before they have
+been consented. Grant admin consent for all of them along with the others.
 
 ### Shared mailboxes
 
@@ -323,6 +330,9 @@ npm test    # totals, copy-to, line states, purchasing rules, Xero payload mappi
    registration's redirect URIs.
 5. Run `npm run db:migrate` against the production `DATABASE_URL` (locally, or
    as a Vercel build step).
+6. Set `CRON_SECRET`. Vercel Cron calls `/api/cron/xero-sync` every five
+   minutes and `/api/cron/campaigns` every minute (`vercel.json`); without the
+   secret both refuse every call. A one-minute schedule needs a Pro plan.
 
 Preview deployments get their URL from `VERCEL_URL` automatically, but each
 preview origin still needs its redirect URI registered before sign-in works
@@ -449,7 +459,7 @@ log as you, marked `via: "mcp"` with the client's name (the dashboard shows
 
 | | |
 |---|---|
-| **Read** | `search`, `whoami`, `list_team`, business partners and contacts, leads (staff), projects with their runbook phases and steps, tasks, communications, sales and purchasing documents (by id or number), items (staff), `list_project_templates` |
+| **Read** | `search`, `whoami`, `list_team`, business partners and contacts, leads (staff), projects with their runbook phases and steps, tasks, communications, sales and purchasing documents (by id or number), items (staff), `list_project_templates`, email campaigns and their reports (`list_campaigns`, `get_campaign_report`, staff) |
 | **Write, inside The Gangway** | `log_communication` (times in Sydney time), `add_note`, `create_contact`, `update_contact`, `add_contact_detail` (a dated or one-off detail under a contact), `create_task`, `update_task`, `update_step` (status, blocker, assignee, due, notes, checklist), `clear_step_blocker`, `add_step`, `set_lead_stage`, `create_lead`, `update_lead`, `confirm_sales_order` |
 | **Write, reaching Xero** | `create_quote` (a DRAFT in Xero), `create_sales_order` (a note on the quote it converts), `add_po_shipment` (a note on the Xero PO), `receive_goods` (a note on the Xero PO), `import_from_xero` (reads Xero, writes here) |
 | **Write, reaching Microsoft 365** | `create_project` (from a runbook template; makes its SharePoint folder when automatic folders are on, or when asked), `update_project` (a linked Planner plan follows the rename) |
@@ -495,6 +505,89 @@ against production.
 
 ---
 
+## 9. Email marketing
+
+**Campaigns** (in the rail under Marketing) is The Gangway's own email
+marketing — no Mailchimp, no second list to keep in sync. The audience is the
+people and leads already here; the email goes out through Exchange Online, one
+message per person, from either the sender's own mailbox or the marketing
+mailbox (`marketing@ankord.com.au` by default, set in Campaigns → Settings).
+
+### What it does
+
+| | |
+|---|---|
+| **Editor** | Blocks — heading, text, image, button, two columns, call-out, quote, divider, spacer, social links, custom HTML — edited beside a live preview of the real email. Click a block in the preview to edit it; drag to reorder; undo and redo; desktop and phone previews; an inbox preview of sender, subject and preview text |
+| **Look** | The Ankor'd card layout or a plain "letter" that reads like a personal email; brand colours, logo, typeface. The footer (sender details, unsubscribe, view in browser) is always there |
+| **Templates** | Six Ankor'd starters (newsletter, announcement, event invitation, case study, personal note, blank), the team's own templates, or a copy of a past campaign |
+| **Merge tags** | `{{first_name}}`, `{{company}}`, `{{sender_name}}` and others, with fallbacks: `{{first_name|there}}` |
+| **Audience** | Built from what the CRM knows — partner kind, status, tags, segment, industry, state, owner, specific partners, primary contacts or decision makers, leads by stage — plus hand-picked people in or out. A live count and sample as it is built. Saved audiences for reuse |
+| **Consent** | Each person's Spam Act consent (opted in, or an existing relationship) is recorded on their contact or in bulk in Campaigns → Audience; a campaign can be limited to either |
+| **Not over-emailing** | Leave out anyone a campaign reached in the last few days |
+| **Checks** | Missing subject or preview text, unknown merge tags, images without alt text, broken links, spam-trigger words, image-heavy emails. Errors block sending |
+| **Test sends** | To up to five addresses, from the same mailbox the campaign will use, so a Send As problem shows before the real send |
+| **Sending** | Now or scheduled (Sydney time). About 25 a minute per mailbox — inside Exchange's 30 a minute and 10,000 a day — in the background, with pause, resume and cancel |
+| **A/B subject lines** | Part of the audience gets each subject; after a wait the better one, by clicks or opens, goes to everyone else |
+| **Reports** | Delivered, opens, clicks, click-to-open, unsubscribes, bounces; first opens by hour; clicks per link; every recipient and what they did. A partner's page shows the campaigns their people received |
+| **Follow-ups** | One click makes a draft to the people who didn't open (or opened, clicked, didn't click) |
+| **Unsubscribe and bounces** | Every email has a working unsubscribe (confirmed with a button, so mail scanners can't trigger it). Exchange's "Undeliverable" notices are read back from the sending mailbox for three days and those addresses suppressed. Suppression is by address, across contacts and leads |
+
+### Setting it up
+
+1. **Entra** — add the delegated Graph permissions `Mail.Send` and
+   `Mail.Send.Shared` (and `Mail.Read.Shared`, if it isn't there already) to the
+   app registration and **grant admin consent**, *before* deploying. See
+   [API permissions](#api-permissions).
+2. **Exchange** — for each person who will send as the marketing mailbox, give
+   them **Send As** on it: Exchange admin centre → Recipients → Mailboxes →
+   `marketing@ankord.com.au` → Delegation → Send as. (Or in PowerShell:
+   `Add-RecipientPermission marketing@ankord.com.au -Trustee kee@ankord.com.au -AccessRights SendAs`.)
+   Read access to the mailbox (Full Access) lets bounces be read back from it.
+   Nothing extra is needed to send from your own mailbox.
+3. **Campaigns → Settings** — check the marketing mailbox address, and fill in
+   the footer: the business name and how to reach it. The Spam Act requires the
+   sender to be identified; campaigns won't send without it.
+4. **Allow sending** — each sender clicks it once (Campaigns → any campaign, or
+   Campaigns → Settings). Microsoft asks for consent to send as them.
+5. Deploy with migration `0018_campaigns` (additive) and `CRON_SECRET` set.
+
+### How it works
+
+- **Delegated, always.** A campaign records the session of the person who
+  pressed Send, and every message is sent with that session's own Microsoft
+  token — `POST /me/sendMail`, or `POST /users/{marketing mailbox}/sendMail`
+  for the shared mailbox. There is no service account and no application
+  permission. Signing out, an admin ending the session, or suspension pauses
+  the campaign with the reason; anyone who can send resumes it as themselves
+  (a campaign from a person's own mailbox can only be resumed by them).
+- **Pulled, not pushed.** `/api/cron/campaigns` runs every minute: it starts
+  scheduled campaigns, sends the next batch of each one, and reads bounces.
+  An open campaign page does the same every 20 seconds. Batches are claimed
+  with `SKIP LOCKED`, so two runs never send to the same person, and a message
+  interrupted mid-send is marked failed rather than retried — sending twice is
+  worse than not sending.
+- **The audience is fixed when sending starts**, not when the campaign is
+  written, so a scheduled campaign includes people added since. Anyone
+  unsubscribed by the time their turn comes is skipped.
+- **Tracking** is a 1×1 image (`/m/o/…`) and links that go through
+  `/m/c/<token>/<link>`. A click URL names a link of that campaign, never a
+  destination, so it is not an open redirect. The token identifies one person
+  in one campaign and grants nothing else. Opens are approximate — Apple Mail
+  loads every image — and Defender Safe Links can click before a person does;
+  the report says so.
+- **Images** uploaded in the editor are stored in the database (2 MB each) and
+  served publicly from `/m/i/<id>`, because mail clients fetch images without
+  signing in. SharePoint links would not load in anyone's inbox.
+- **Campaign sends are not saved to Sent Items** (a thousand copies helps no
+  one); test sends are.
+- **Limits.** Exchange Online is built for people, not bulk: 30 messages a
+  minute and 10,000 recipients a day per mailbox, and Microsoft's tenant-wide
+  external recipient limits on top. That comfortably covers Ankor'd's client and
+  prospect lists. For lists in the tens of thousands, the send engine is the one
+  piece to swap (Azure Communication Services Email is the Microsoft option).
+
+---
+
 ## Layout
 
 ```
@@ -503,6 +596,7 @@ src/
     (app)/          the signed-in application
     api/            auth callbacks, Graph-backed endpoints
     signin/         sign-in page
+    m/              public campaign endpoints: open pixel, clicks, web version, unsubscribe, images
     setup/          shown while environment variables are missing
   components/
     brand/          the Ankor'd marks, drawn in currentColor
@@ -515,6 +609,7 @@ src/
     db/             Drizzle schema and client
     graph/          Microsoft Graph — mail, SharePoint, To Do and Planner
     planner/        the Planner mapping and two-way sync
+    campaigns/      email marketing: blocks, rendering, audiences, the send engine, tracking
     sales/          document types, totals, copy-to, fulfilment (client-safe)
     xero/           Xero auth, client, payload mapping, push engine and pull
     actions/        server actions (writes)

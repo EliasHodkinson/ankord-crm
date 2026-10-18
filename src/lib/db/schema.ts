@@ -16,6 +16,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { DEFAULT_CLIENT_FOLDER_TEXT } from "../folder-template";
+import type { AbTest, AudienceRule, Block, FromMode, Theme } from "../campaigns/model";
 
 /* ───────────────────────── enums ───────────────────────── */
 
@@ -315,6 +316,13 @@ export const contacts = pgTable(
     dietary: text("dietary"),
     pronouns: text("pronouns"),
     preferredContact: text("preferred_contact"),
+    /**
+     * What the Spam Act consent for marketing email rests on: `express` (they
+     * asked for it) or `inferred` (an existing business relationship). Null is
+     * "not recorded". Unsubscribing is not stored here — it is an address-level
+     * suppression in email_suppressions, so it survives a duplicate contact.
+     */
+    marketingConsent: text("marketing_consent").$type<"express" | "inferred">(),
 
     notes: text("notes"),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
@@ -893,6 +901,20 @@ export const settings = pgTable("settings", {
   /** When the Xero pull last completed — the If-Modified-Since for the next. */
   xeroLastPullAt: timestamp("xero_last_pull_at", { withTimezone: true }),
 
+  /*
+   * Email marketing. The shared mailbox campaigns can send from — each sender
+   * still needs Send As on it in Exchange — and the footer every campaign
+   * carries. The Spam Act requires the sender to be identified and an
+   * unsubscribe to work; the footer and the unsubscribe link are not optional.
+   */
+  marketingMailbox: text("marketing_mailbox").default("marketing@ankord.com.au"),
+  marketingFooter: text("marketing_footer").default(
+    "Ankor'd Pty Ltd · Regional NSW, Australia\nYou're receiving this because you work with, or have asked to hear from, Ankor'd.",
+  ),
+  marketingLogoUrl: text("marketing_logo_url"),
+  /** Links for the social block, by network. */
+  marketingSocial: jsonb("marketing_social").$type<Record<string, string>>(),
+
   updatedById: uuid("updated_by_id").references(() => users.id, { onDelete: "set null" }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -1428,6 +1450,230 @@ export const xeroImportSkips = pgTable(
   (t) => [primaryKey({ columns: [t.kind, t.xeroId] })],
 );
 
+/* ───────────────────────── email marketing ───────────────────────── */
+
+export const campaignStatusEnum = pgEnum("campaign_status", [
+  "draft",
+  /** Waiting for its send time. */
+  "scheduled",
+  /** Recipients are being worked through by the send engine. */
+  "sending",
+  /** An A/B test went out; the remainder waits for the winner. */
+  "testing",
+  /** Stopped by a person, or by the engine when it could not carry on. */
+  "paused",
+  "sent",
+  "cancelled",
+]);
+
+export const recipientStatusEnum = pgEnum("recipient_status", [
+  "queued",
+  /** Held back for the winner of an A/B test. */
+  "held",
+  /** Claimed by a send run. A crash here is never retried — see lib/campaigns/send.ts. */
+  "sending",
+  "sent",
+  "failed",
+  /** Dropped at send time: unsubscribed since the audience was taken. */
+  "skipped",
+]);
+
+/**
+ * A marketing email and everything about sending it. Content is stored as
+ * blocks (lib/campaigns/model.ts) and rendered per recipient at send time.
+ */
+export const campaigns = pgTable(
+  "campaigns",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    status: campaignStatusEnum("status").notNull().default("draft"),
+    subject: text("subject").notNull().default(""),
+    /** The inbox preview line after the subject. */
+    preheader: text("preheader").notNull().default(""),
+    fromMode: text("from_mode").$type<FromMode>().notNull().default("marketing"),
+    /** The mailbox it actually went from, fixed when sending starts. */
+    fromAddress: text("from_address"),
+    replyTo: text("reply_to"),
+    blocks: jsonb("blocks").$type<Block[]>().notNull().default(sql`'[]'::jsonb`),
+    theme: jsonb("theme").$type<Theme>(),
+    audience: jsonb("audience").$type<AudienceRule>(),
+    abTest: jsonb("ab_test").$type<AbTest>(),
+    /** Set when the test is decided: which subject went to the remainder. */
+    abWinner: text("ab_winner").$type<"a" | "b">(),
+    abDecideAt: timestamp("ab_decide_at", { withTimezone: true }),
+    trackOpens: boolean("track_opens").notNull().default(true),
+    trackClicks: boolean("track_clicks").notNull().default(true),
+    templateId: uuid("template_id"),
+    scheduledAt: timestamp("scheduled_at", { withTimezone: true }),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    /**
+     * Whose sign-in sends it. Graph is called with this session's delegated
+     * token, so signing out (or an admin ending the session) stops the
+     * campaign — it pauses and says why. There is no service account.
+     */
+    sendSessionId: uuid("send_session_id").references(() => sessions.id, { onDelete: "set null" }),
+    senderId: uuid("sender_id").references(() => users.id, { onDelete: "set null" }),
+    lastError: text("last_error"),
+    /** When test sends last went out, for the pre-send checklist. */
+    testSentAt: timestamp("test_sent_at", { withTimezone: true }),
+    /** Bounce scanning of the sending mailbox, last run. */
+    bouncesCheckedAt: timestamp("bounces_checked_at", { withTimezone: true }),
+    createdById: uuid("created_by_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("campaigns_status_idx").on(t.status, t.scheduledAt),
+    index("campaigns_created_idx").on(t.createdAt),
+  ],
+);
+
+/**
+ * One row per person a campaign went (or is going) to. Name and company are a
+ * snapshot, so the report still reads correctly after a contact is edited or
+ * removed. The token is the only thing in a tracking or unsubscribe link.
+ */
+export const campaignRecipients = pgTable(
+  "campaign_recipients",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    campaignId: uuid("campaign_id")
+      .notNull()
+      .references(() => campaigns.id, { onDelete: "cascade" }),
+    contactId: uuid("contact_id").references(() => contacts.id, { onDelete: "set null" }),
+    leadId: uuid("lead_id").references(() => leads.id, { onDelete: "set null" }),
+    customerId: uuid("customer_id").references(() => customers.id, { onDelete: "set null" }),
+    email: text("email").notNull(),
+    firstName: text("first_name"),
+    lastName: text("last_name"),
+    company: text("company"),
+    jobTitle: text("job_title"),
+    token: text("token").notNull(),
+    variant: text("variant").$type<"a" | "b">(),
+    status: recipientStatusEnum("status").notNull().default("queued"),
+    error: text("error"),
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    firstOpenedAt: timestamp("first_opened_at", { withTimezone: true }),
+    openCount: integer("open_count").notNull().default(0),
+    firstClickedAt: timestamp("first_clicked_at", { withTimezone: true }),
+    clickCount: integer("click_count").notNull().default(0),
+    unsubscribedAt: timestamp("unsubscribed_at", { withTimezone: true }),
+    bouncedAt: timestamp("bounced_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("campaign_recipients_token_idx").on(t.token),
+    uniqueIndex("campaign_recipients_email_idx").on(t.campaignId, t.email),
+    index("campaign_recipients_status_idx").on(t.campaignId, t.status),
+    index("campaign_recipients_contact_idx").on(t.contactId),
+    index("campaign_recipients_sent_idx").on(t.sentAt),
+  ],
+);
+
+/**
+ * The links in a campaign as sent. A click URL names a row here, never a
+ * destination, so the redirect can only ever go where the campaign pointed —
+ * it is not an open redirect.
+ */
+export const campaignLinks = pgTable(
+  "campaign_links",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    campaignId: uuid("campaign_id")
+      .notNull()
+      .references(() => campaigns.id, { onDelete: "cascade" }),
+    url: text("url").notNull(),
+    label: text("label"),
+    position: integer("position").notNull().default(0),
+  },
+  (t) => [uniqueIndex("campaign_links_url_idx").on(t.campaignId, t.url)],
+);
+
+/** Opens, clicks and unsubscribes as they happened — the report's timeline. */
+export const campaignEvents = pgTable(
+  "campaign_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    campaignId: uuid("campaign_id")
+      .notNull()
+      .references(() => campaigns.id, { onDelete: "cascade" }),
+    recipientId: uuid("recipient_id")
+      .notNull()
+      .references(() => campaignRecipients.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<"open" | "click" | "unsubscribe" | "bounce">().notNull(),
+    linkId: uuid("link_id").references(() => campaignLinks.id, { onDelete: "set null" }),
+    userAgent: text("user_agent"),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("campaign_events_campaign_idx").on(t.campaignId, t.kind, t.at),
+    index("campaign_events_recipient_idx").on(t.recipientId),
+  ],
+);
+
+/**
+ * Addresses no campaign may reach: unsubscribed, bounced, or taken out by
+ * hand. Keyed by address, not contact, so it holds across duplicates, leads
+ * and re-imports. Removing a row is how someone is re-subscribed — only on
+ * their own request.
+ */
+export const emailSuppressions = pgTable("email_suppressions", {
+  email: text("email").primaryKey(),
+  reason: text("reason").$type<"unsubscribed" | "bounced" | "manual">().notNull(),
+  campaignId: uuid("campaign_id").references(() => campaigns.id, { onDelete: "set null" }),
+  note: text("note"),
+  createdById: uuid("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** A reusable starting point — the team's own, beside the built-in starters. */
+export const emailTemplates = pgTable(
+  "email_templates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    description: text("description"),
+    subject: text("subject").notNull().default(""),
+    preheader: text("preheader").notNull().default(""),
+    blocks: jsonb("blocks").$type<Block[]>().notNull().default(sql`'[]'::jsonb`),
+    theme: jsonb("theme").$type<Theme>(),
+    createdById: uuid("created_by_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+  },
+  (t) => [index("email_templates_name_idx").on(t.name)],
+);
+
+/** A named audience rule — "Active clients, NSW", "Media list". */
+export const audienceSegments = pgTable("audience_segments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  rule: jsonb("rule").$type<AudienceRule>().notNull(),
+  createdById: uuid("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * Images uploaded for emails. Email clients fetch images anonymously, so they
+ * cannot come from SharePoint; they are served publicly from /m/i/<id>.
+ * Small by design (2 MB each), stored base64 so the HTTP driver carries them.
+ */
+export const emailAssets = pgTable("email_assets", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  mime: text("mime").notNull(),
+  size: integer("size").notNull(),
+  width: integer("width"),
+  height: integer("height"),
+  data: text("data").notNull(),
+  createdById: uuid("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 /* ───────────────────────── relations ───────────────────────── */
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -1563,3 +1809,8 @@ export type RowType = (typeof rowTypeEnum.enumValues)[number];
 export type AmountsAre = (typeof amountsAreEnum.enumValues)[number];
 export type XeroSyncState = (typeof xeroSyncStateEnum.enumValues)[number];
 export type XeroPayment = typeof xeroPayments.$inferSelect;
+export type Campaign = typeof campaigns.$inferSelect;
+export type CampaignStatus = (typeof campaignStatusEnum.enumValues)[number];
+export type CampaignRecipient = typeof campaignRecipients.$inferSelect;
+export type EmailTemplate = typeof emailTemplates.$inferSelect;
+export type AudienceSegment = typeof audienceSegments.$inferSelect;

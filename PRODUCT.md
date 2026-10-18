@@ -25,6 +25,10 @@ desktop, all day, alongside Outlook and SharePoint. Not a customer-facing produc
    the CRM. The CRM never becomes a second copy of the document library.
 5. **Communications** — emails linked directly from Microsoft 365 against a
    customer, project or lead, visible to the whole team once linked.
+6. **Campaigns** — marketing email to the people the CRM already knows, written
+   from Ankor'd templates and sent through Microsoft 365 as the person sending
+   it or the marketing mailbox, with consent, unsubscribes and results kept
+   against each person.
 
 ## Non-negotiables
 - Authentication is Microsoft Entra ID, single-tenant, delegated permissions.

@@ -9,7 +9,7 @@ const control =
   "disabled:cursor-not-allowed disabled:bg-[var(--surface-3)] disabled:text-[var(--text-faint)] " +
   "aria-[invalid=true]:border-[var(--danger)] aria-[invalid=true]:outline-[var(--danger)]";
 
-export function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
+export function Input({ className, ...props }: React.ComponentProps<"input">) {
   return <input className={cn(control, "h-9.5", className)} {...props} />;
 }
 

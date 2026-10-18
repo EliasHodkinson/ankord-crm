@@ -44,10 +44,17 @@ export const SCOPE_STRING = GRAPH_SCOPES.join(" ");
  * - `shared-mail` — `Mail.Read.Shared`, for linking email from a shared
  *   mailbox. Bounded by Exchange: only mailboxes the person can already open
  *   in Outlook.
+ * - `marketing` — `Mail.Send` and `Mail.Send.Shared`, for campaigns: sending
+ *   as yourself, or as the marketing mailbox. Bounded by Exchange: sending as
+ *   the shared mailbox works only for people given Send As on it. Asked for
+ *   only by someone who sends a campaign; nothing else in the CRM sends mail.
+ *   Mail.Read.Shared rides along so bounces can be read back from the
+ *   marketing mailbox.
  */
 export const OPTIONAL_SCOPES = {
   access: ["User.Invite.All"],
   "shared-mail": ["Mail.Read.Shared"],
+  marketing: ["Mail.Send", "Mail.Send.Shared", "Mail.Read.Shared"],
 } as const satisfies Record<string, readonly string[]>;
 
 export type ScopeSet = keyof typeof OPTIONAL_SCOPES;

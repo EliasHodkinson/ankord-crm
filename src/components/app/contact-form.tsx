@@ -7,9 +7,11 @@ import {
   CheckboxField,
   FormRow,
   FormSection,
+  SelectField,
   TextAreaField,
   TextField,
 } from "@/components/app/form-kit";
+import { MARKETING_CONSENT, MARKETING_CONSENT_HINT, optionsFor } from "@/components/ui/status";
 import type { Contact } from "@/lib/db/schema";
 import type { ActionState } from "@/lib/actions/shared";
 
@@ -106,6 +108,16 @@ export function ContactForm({
             id={f("preferredContact")}
             defaultValue={contact?.preferredContact ?? ""}
             placeholder="Phone — rarely reads email"
+          />
+        </FormRow>
+        <FormRow>
+          <SelectField
+            name="marketingConsent"
+            label="Marketing email"
+            id={f("marketingConsent")}
+            defaultValue={contact?.marketingConsent ?? "none"}
+            options={optionsFor(MARKETING_CONSENT)}
+            hint={MARKETING_CONSENT_HINT[contact?.marketingConsent ?? "none"]}
           />
         </FormRow>
         <FormRow>

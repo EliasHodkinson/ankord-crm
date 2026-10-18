@@ -11,6 +11,7 @@ import {
   FolderKanban,
   Gauge,
   Mail,
+  Megaphone,
   Package,
   PackageCheck,
   ReceiptText,
@@ -37,6 +38,12 @@ const SECTIONS: { heading?: string; items: NavItem[] }[] = [
       { href: "/leads", label: "Leads", icon: Target, staffOnly: true },
       { href: "/customers", label: "Business Partners", icon: Building2 },
       { href: "/contacts", label: "People", icon: Users },
+    ],
+  },
+  {
+    heading: "Marketing",
+    items: [
+      { href: "/campaigns", label: "Campaigns", icon: Megaphone, staffOnly: true },
     ],
   },
   {
@@ -95,17 +102,22 @@ export function Nav({
   counts?: NavCounts;
 }) {
   const pathname = usePathname();
+  // A section with nothing this person can open is not shown at all.
+  const sections = SECTIONS.map((section) => ({
+    ...section,
+    items: section.items.filter((item) => !(restricted && item.staffOnly)),
+  })).filter((section) => section.items.length);
 
   return (
     <nav className="flex flex-1 flex-col gap-6 overflow-y-auto px-3 py-4 scrollbar-slim">
-      {SECTIONS.map((section, i) => (
+      {sections.map((section, i) => (
         <div key={section.heading ?? i} className="flex flex-col gap-0.5">
           {section.heading ? (
             <p className="mb-1.5 px-2.5 text-[10px] font-semibold tracking-[0.12em] text-[var(--nav-fg-dim)] uppercase">
               {section.heading}
             </p>
           ) : null}
-          {section.items.filter((item) => !(restricted && item.staffOnly)).map((item) => (
+          {section.items.map((item) => (
             <NavLink
               key={item.href}
               item={item}
