@@ -9,7 +9,14 @@
  * They are parsed as *local* midnight throughout: `new Date("2026-10-02")`
  * parses as UTC and lands on the previous day for anyone east of Greenwich,
  * which is everyone using this.
+ *
+ * "Today" is Sydney's calendar day wherever the code runs — the server is in
+ * UTC, and a server-rendered "today" must agree with the one the browser draws.
+ *
+ * The same maths serves one runbook and the whole portfolio (`/projects`).
  */
+
+import { APP_TIME_ZONE } from "@/lib/utils";
 
 /** The runbook views, in the order they appear in the switcher. */
 export const RUNBOOK_VIEWS = ["list", "board", "calendar", "timeline"] as const;
@@ -59,10 +66,38 @@ export function parseDay(value: string | null | undefined): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-/** Today at local midnight, so day comparisons ignore the clock. */
+const sydneyDay = new Intl.DateTimeFormat("en-CA", {
+  timeZone: APP_TIME_ZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+/** An instant's Sydney calendar day, `YYYY-MM-DD`. */
+export function sydneyDayKey(at: Date = new Date()): string {
+  return sydneyDay.format(at);
+}
+
+/**
+ * Today in Sydney, at local midnight, so day comparisons ignore the clock and
+ * the server (UTC) and the browser land on the same day.
+ */
 export function startOfToday(): Date {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return parseDay(sydneyDayKey()) as Date;
+}
+
+export function addDays(d: Date, delta: number): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + delta);
+}
+
+/** Whole calendar days from a to b — rounded, so a DST change is not a day. */
+export function daysBetween(a: Date, b: Date): number {
+  return Math.round((b.getTime() - a.getTime()) / 86_400_000);
+}
+
+/** The Monday on or before the day given. */
+export function startOfWeek(d: Date): Date {
+  return addDays(d, -((d.getDay() + 6) % 7));
 }
 
 export function dayKey(d: Date): string {
@@ -206,6 +241,23 @@ const AXIS_PAD_DAYS = 10;
  */
 export function axisOf(steps: PlacedStep[], today = startOfToday()): Span | null {
   const span = spanOf(steps);
+  return span ? axisAround([span], today) : null;
+}
+
+/** The smallest span covering every span given. */
+export function unionOf(spans: Span[]): Span | null {
+  if (spans.length === 0) return null;
+  let { start, end } = spans[0];
+  for (const s of spans) {
+    if (s.start.getTime() < start.getTime()) start = s.start;
+    if (s.end.getTime() > end.getTime()) end = s.end;
+  }
+  return { start, end };
+}
+
+/** `axisOf` for any set of spans — a portfolio of projects, not one runbook. */
+export function axisAround(spans: Span[], today = startOfToday()): Span | null {
+  const span = unionOf(spans);
   if (!span) return null;
 
   const lo = new Date(Math.min(span.start.getTime(), today.getTime()));
@@ -239,6 +291,61 @@ export function monthTicks(axis: Span): Date[] {
     cursor.setMonth(cursor.getMonth() + 1);
   }
   return ticks;
+}
+
+/* ───────────────────────── zoom ───────────────────────── */
+
+/** How much of the calendar a timeline shows at once. */
+export const TIMELINE_ZOOMS = ["week", "month", "quarter"] as const;
+export type TimelineZoom = (typeof TIMELINE_ZOOMS)[number];
+
+export function isTimelineZoom(value: string | undefined): value is TimelineZoom {
+  return !!value && (TIMELINE_ZOOMS as readonly string[]).includes(value);
+}
+
+/** Pixels per day: roughly a month, a quarter or a year across a laptop screen. */
+export const DAY_PX: Record<TimelineZoom, number> = { week: 26, month: 7, quarter: 2.4 };
+
+export type Tick = { at: Date; label: string };
+
+/**
+ * Gridlines for a zoom level — Mondays, first-of-months or first-of-quarters
+ * inside the axis. As with `monthTicks`, ticks in the padding are skipped.
+ */
+export function ticksFor(axis: Span, zoom: TimelineZoom): Tick[] {
+  if (zoom === "week") {
+    const ticks: Tick[] = [];
+    for (let at = startOfWeek(axis.start); at.getTime() <= axis.end.getTime(); at = addDays(at, 7)) {
+      if (at.getTime() < axis.start.getTime()) continue;
+      ticks.push({ at, label: at.toLocaleDateString("en-AU", { day: "numeric", month: "short" }) });
+    }
+    return ticks;
+  }
+  return monthTicks(axis)
+    .filter((at) => zoom === "month" || at.getMonth() % 3 === 0)
+    .map((at) => ({
+      at,
+      label: zoom === "quarter" ? `Q${at.getMonth() / 3 + 1} ${at.getFullYear()}` : monthTickLabel(at),
+    }));
+}
+
+/** A run of days the trends band counts over: `[start, end)`. */
+export type Bucket = { key: string; start: Date; end: Date };
+
+/** Weeks (Monday first) or calendar months covering the axis. */
+export function bucketsOf(axis: Span, unit: "week" | "month"): Bucket[] {
+  const out: Bucket[] = [];
+  let start =
+    unit === "week"
+      ? startOfWeek(axis.start)
+      : new Date(axis.start.getFullYear(), axis.start.getMonth(), 1);
+  while (start.getTime() <= axis.end.getTime()) {
+    const end =
+      unit === "week" ? addDays(start, 7) : new Date(start.getFullYear(), start.getMonth() + 1, 1);
+    out.push({ key: dayKey(start), start, end });
+    start = end;
+  }
+  return out;
 }
 
 /**

@@ -62,11 +62,14 @@ export function StepChip({
   href,
   className,
   showDate = false,
+  project,
 }: {
   step: PlacedStep;
   href: string;
   className?: string;
   showDate?: boolean;
+  /** On the portfolio calendar: whose step this is, and that project's colour. */
+  project?: { label: string; name: string; colour: string };
 }) {
   const timing = timingOf(step);
   const Icon = stepStatusMeta(step.status).icon;
@@ -77,7 +80,9 @@ export function StepChip({
     <Link
       href={href}
       scroll={false}
+      style={project ? { borderLeftColor: project.colour } : undefined}
       title={[
+        project?.name,
         step.title,
         stepStatusLabel(step.status),
         step.ownerLabel,
@@ -97,6 +102,7 @@ export function StepChip({
             ? "border-[var(--color-sunrise-300)] bg-[var(--color-sunrise-50)] dark:border-[var(--color-sunrise-700)] dark:bg-[var(--color-sunrise-900)]/25"
             : "border-[var(--border-soft)] bg-[var(--surface-2)]",
         "hover:border-[var(--color-coastal-300)] hover:bg-[var(--surface-3)]",
+        project && "border-l-[3px]",
         className,
       )}
     >
@@ -104,6 +110,7 @@ export function StepChip({
         aria-hidden
         className={cn(
           "size-3 shrink-0",
+          project && "self-start mt-px",
           step.status === "done"
             ? "text-[var(--ok)]"
             : step.status === "blocked"
@@ -111,15 +118,22 @@ export function StepChip({
               : TIMING_TEXT[timing],
         )}
       />
-      <span
-        className={cn(
-          "min-w-0 flex-1 truncate text-[11px] leading-4",
-          step.status === "done"
-            ? "text-[var(--text-faint)] line-through decoration-[var(--border)]"
-            : "text-[var(--text)]",
-        )}
-      >
-        {step.title}
+      <span className="flex min-w-0 flex-1 flex-col">
+        {project ? (
+          <span className="truncate text-[10px] leading-3.5 font-semibold text-[var(--text-muted)]">
+            {project.label}
+          </span>
+        ) : null}
+        <span
+          className={cn(
+            "truncate text-[11px] leading-4",
+            step.status === "done"
+              ? "text-[var(--text-faint)] line-through decoration-[var(--border)]"
+              : "text-[var(--text)]",
+          )}
+        >
+          {step.title}
+        </span>
       </span>
       {showDate && step.dueDate ? (
         <span className={cn("shrink-0 text-[10px] tabular", TIMING_TEXT[timing])}>

@@ -1,106 +1,173 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Plus } from "lucide-react";
-import { and, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import { PageBody, PageHeader } from "@/components/app/page-header";
 import { ButtonLink } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
+import { Card, CardBody } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Table, TableShell, Td, Th, Tr } from "@/components/ui/table";
 import { PROJECT_HEALTH, PROJECT_STATUS, StatusBadge } from "@/components/ui/status";
 import { FilterBar } from "@/components/app/filter-bar";
+import { PortfolioCalendar } from "@/components/app/portfolio-calendar";
+import { PortfolioTimeline } from "@/components/app/portfolio-timeline";
+import { SavedViews } from "@/components/app/saved-views";
+import { PORTFOLIO_VIEW_OPTIONS, ViewToggle } from "@/components/app/view-toggle";
 import { ProgressBar } from "@/components/ui/progress";
-import { getDb } from "@/lib/db";
-import { customers, projectSteps, projects, users } from "@/lib/db/schema";
 import { formatDate } from "@/lib/utils";
 import { requireUser } from "@/lib/auth/session";
-import { customerScope, getAccess } from "@/lib/access";
+import { listPortfolio, listPortfolioFacets, listProjectRows } from "@/lib/data/portfolio";
+import { listSavedViews } from "@/lib/data/saved-views";
+import {
+  calendarWindow,
+  parsePortfolioFilters,
+  portfolioViewOf,
+  timelineGroupOf,
+  timelineZoomOf,
+  VIEW_PARAMS,
+  type PortfolioParams,
+} from "@/lib/portfolio";
+import { dayKey, parseDay, parseMonthKey, startOfToday, startOfWeek } from "@/lib/runbook-views";
 
 export const metadata: Metadata = { title: "Projects" };
 export const dynamic = "force-dynamic";
 
+/**
+ * Every project, three ways: the list, a calendar of what falls due, and a
+ * timeline with the workload trend above it. Filters and the view live in the
+ * URL, so a saved view remembers "timeline, by lead, this quarter".
+ */
 export default async function ProjectsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; q?: string }>;
+  searchParams: Promise<PortfolioParams>;
 }) {
-  await requireUser();
-  const access = await getAccess();
-  const { status, q } = await searchParams;
-  const db = getDb();
+  const { user } = await requireUser();
+  const params = await searchParams;
+  const view = portfolioViewOf(params.view);
+  const filters = parsePortfolioFilters(params);
+  const filtered = Boolean(
+    filters.q || params.status || filters.owner || filters.partner || filters.from || filters.to,
+  );
 
-  const filters: SQL[] = [];
-  const scope = customerScope(access, projects.customerId);
-  if (scope) filters.push(scope);
-  if (status && status !== "all" && status !== "live") {
-    filters.push(eq(projects.status, status as "active"));
-  }
-  if (!status || status === "live") {
-    filters.push(sql`${projects.status} in ('planning','active','on_hold')`);
-  }
-  if (q) {
-    filters.push(
-      or(ilike(projects.name, `%${q}%`), ilike(customers.name, `%${q}%`))!,
+  const [facets, views] = await Promise.all([listPortfolioFacets(), listSavedViews("projects")]);
+
+  const header = (
+    <PageHeader
+      title="Projects"
+      description="The delivery work — phases, steps, the people holding things up, and where the files live."
+      actions={
+        <ButtonLink href="/projects/new" variant="primary">
+          <Plus />
+          New project
+        </ButtonLink>
+      }
+    />
+  );
+
+  const toolbar = (
+    <>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <SavedViews entity="projects" views={views} currentUserId={user.id} />
+        <ViewToggle
+          views={PORTFOLIO_VIEW_OPTIONS}
+          defaultView="list"
+          clears={VIEW_PARAMS}
+          label="Projects view"
+        />
+      </div>
+      <FilterBar
+        searchPlaceholder="Search projects…"
+        keep={["view", ...VIEW_PARAMS]}
+        dateRange={{ from: "from", to: "to" }}
+        filters={[
+          {
+            param: "status",
+            label: "Status",
+            defaultValue: "live",
+            options: [
+              { value: "live", label: "Live work" },
+              { value: "all", label: "All projects" },
+              ...Object.entries(PROJECT_STATUS).map(([value, { label }]) => ({ value, label })),
+            ],
+          },
+          {
+            param: "owner",
+            label: "Lead",
+            defaultValue: "",
+            options: [
+              { value: "", label: "Any lead" },
+              ...facets.owners.map((o) => ({ value: o.id, label: o.name ?? "Unnamed" })),
+              { value: "none", label: "No lead" },
+            ],
+          },
+          {
+            param: "partner",
+            label: "Business partner",
+            defaultValue: "",
+            options: [
+              { value: "", label: "Any business partner" },
+              ...facets.partners.map((p) => ({ value: p.id, label: p.name })),
+            ],
+          },
+        ]}
+      />
+    </>
+  );
+
+  if (view !== "list") {
+    const today = startOfToday();
+    const mode = params.cal === "week" ? "week" : "month";
+    const anchor =
+      mode === "week"
+        ? startOfWeek(parseDay(params.week) ?? today)
+        : (parseMonthKey(params.month) ?? new Date(today.getFullYear(), today.getMonth(), 1));
+    // The calendar only needs the steps on screen; the timeline's trends need them all.
+    const portfolio = await listPortfolio(
+      filters,
+      view === "calendar" ? calendarWindow(mode, anchor) : undefined,
+    );
+
+    return (
+      <>
+        {header}
+        <PageBody className="flex flex-col gap-4">
+          {toolbar}
+          <Card>
+            <CardBody>
+              {view === "calendar" ? (
+                <PortfolioCalendar portfolio={portfolio} mode={mode} anchor={dayKey(anchor)} />
+              ) : (
+                <PortfolioTimeline
+                  portfolio={portfolio}
+                  group={timelineGroupOf(params.group)}
+                  zoom={timelineZoomOf(params.zoom)}
+                  range={{ from: filters.from, to: filters.to }}
+                />
+              )}
+            </CardBody>
+          </Card>
+        </PageBody>
+      </>
     );
   }
 
-  const rows = await db
-    .select({
-      project: projects,
-      customerName: customers.name,
-      ownerName: users.name,
-      ownerPhoto: users.photo,
-      total: sql<number>`(select count(*)::int from ${projectSteps} where ${projectSteps.projectId} = ${projects.id} and ${projectSteps.status} <> 'not_applicable')`,
-      done: sql<number>`(select count(*)::int from ${projectSteps} where ${projectSteps.projectId} = ${projects.id} and ${projectSteps.status} = 'done')`,
-      blocked: sql<number>`(select count(*)::int from ${projectSteps} where ${projectSteps.projectId} = ${projects.id} and ${projectSteps.status} = 'blocked')`,
-    })
-    .from(projects)
-    .innerJoin(customers, eq(customers.id, projects.customerId))
-    .leftJoin(users, eq(users.id, projects.ownerId))
-    .where(filters.length ? and(...filters) : undefined)
-    .orderBy(desc(projects.updatedAt))
-    .limit(200);
+  const rows = await listProjectRows(filters);
 
   return (
     <>
-      <PageHeader
-        title="Projects"
-        description="The delivery work — phases, steps, the people holding things up, and where the files live."
-        actions={
-          <ButtonLink href="/projects/new" variant="primary">
-            <Plus />
-            New project
-          </ButtonLink>
-        }
-      />
+      {header}
 
       <PageBody className="flex flex-col gap-4">
-        <FilterBar
-          searchPlaceholder="Search projects…"
-          filters={[
-            {
-              param: "status",
-              label: "Status",
-              defaultValue: "live",
-              options: [
-                { value: "live", label: "Live work" },
-                { value: "all", label: "All projects" },
-                ...Object.entries(PROJECT_STATUS).map(([value, { label }]) => ({
-                  value,
-                  label,
-                })),
-              ],
-            },
-          ]}
-        />
+        {toolbar}
 
         {rows.length === 0 ? (
           <div className="rounded-[10px] border border-[var(--border)] bg-[var(--surface)]">
             <EmptyState
-              title={q || status ? "No projects match that" : "No projects running"}
+              title={filtered ? "No projects match that" : "No projects running"}
               description={
-                q || status
-                  ? "Try a different status, or clear the search."
+                filtered
+                  ? "Try a different status, or clear the filters."
                   : "Start one from a runbook template — the onboarding template alone lays out five phases and forty-one steps, warnings included."
               }
               action={

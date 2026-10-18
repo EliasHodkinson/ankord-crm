@@ -84,6 +84,17 @@ chart carries a "Show the numbers" table, so nothing is gated behind colour.
 Status colours (`--ok`, `--warn`, `--danger`) are reserved for state and never
 reused as a series colour.
 
+Telling projects apart on the portfolio calendar and timeline is an identity
+job, not an ordinal one, so it has its own six hues: `--identity-1` through
+`--identity-6` (teal, ochre, violet, rose, blue, umber). No orange, red or
+green — those belong to the accent and to state. A project's slot is hashed
+from its id, so filtering never repaints the survivors; because six hues repeat
+across a large portfolio, every coloured mark also carries the project's code
+or name. Both modes are selected steps, checked for lightness, chroma, 3:1
+contrast and colour-blind separation against their own surface. The workload
+trend band above the timeline stays on the `--chart-*` ramp, with steps and
+projects drawn as two charts rather than one with two scales.
+
 ## Density
 Tables run at 13px with 40px rows and no zebra striping — a hairline between
 rows and a hover tint does the work. Record pages are two columns on wide

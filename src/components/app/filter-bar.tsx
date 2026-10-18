@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Loader2, Search, X } from "lucide-react";
-import { Select } from "@/components/ui/field";
+import { Input, Select } from "@/components/ui/field";
 import { cn } from "@/lib/utils";
 
 export type FilterSpec = {
@@ -21,10 +21,16 @@ export function FilterBar({
   filters = [],
   searchPlaceholder = "Search…",
   searchParam = "q",
+  dateRange,
+  keep = [],
 }: {
   filters?: FilterSpec[];
   searchPlaceholder?: string;
   searchParam?: string;
+  /** A from / to pair of `YYYY-MM-DD` params, shown as two date inputs. */
+  dateRange?: { from: string; to: string };
+  /** Params Clear leaves alone — which view you are in is not a filter. */
+  keep?: string[];
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -52,6 +58,7 @@ export function FilterBar({
 
   const active =
     Boolean(params.get(searchParam)) ||
+    (dateRange && (params.get(dateRange.from) || params.get(dateRange.to))) ||
     filters.some((f) => {
       const v = params.get(f.param);
       return v && v !== f.defaultValue;
@@ -106,12 +113,43 @@ export function FilterBar({
         </label>
       ))}
 
+      {dateRange ? (
+        <div className="flex items-center gap-1.5">
+          {(["from", "to"] as const).map((end) => (
+            <label key={end} className="flex items-center gap-1.5">
+              <span className="text-[12px] text-[var(--text-muted)]">
+                {end === "from" ? "From" : "to"}
+              </span>
+              <Input
+                type="date"
+                value={params.get(dateRange[end]) ?? ""}
+                onChange={(e) =>
+                  push((next) =>
+                    e.target.value
+                      ? next.set(dateRange[end], e.target.value)
+                      : next.delete(dateRange[end]),
+                  )
+                }
+                className="h-9 w-auto text-[13px]"
+              />
+            </label>
+          ))}
+        </div>
+      ) : null}
+
       {active ? (
         <button
           type="button"
           onClick={() => {
             setTerm("");
-            startTransition(() => router.replace(pathname, { scroll: false }));
+            const next = new URLSearchParams();
+            for (const key of keep) {
+              const value = params.get(key);
+              if (value) next.set(key, value);
+            }
+            startTransition(() =>
+              router.replace(next.size ? `${pathname}?${next}` : pathname, { scroll: false }),
+            );
           }}
           className="inline-flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-[13px] text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-3)] hover:text-[var(--text)]"
         >
