@@ -21,10 +21,13 @@ export function FilterBar({
   filters = [],
   searchPlaceholder = "Search…",
   searchParam = "q",
+  keep = [],
 }: {
   filters?: FilterSpec[];
   searchPlaceholder?: string;
   searchParam?: string;
+  /** Parameters Clear leaves alone — a tab the page is on is not a filter. */
+  keep?: string[];
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -111,7 +114,14 @@ export function FilterBar({
           type="button"
           onClick={() => {
             setTerm("");
-            startTransition(() => router.replace(pathname, { scroll: false }));
+            const next = new URLSearchParams();
+            for (const key of keep) {
+              const value = params.get(key);
+              if (value) next.set(key, value);
+            }
+            startTransition(() =>
+              router.replace(next.size ? `${pathname}?${next}` : pathname, { scroll: false }),
+            );
           }}
           className="inline-flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-[13px] text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-3)] hover:text-[var(--text)]"
         >

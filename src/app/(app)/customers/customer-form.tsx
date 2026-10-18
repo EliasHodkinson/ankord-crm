@@ -14,8 +14,8 @@ import {
   TextAreaField,
   TextField,
 } from "@/components/app/form-kit";
-import { CUSTOMER_STATUS, optionsFor } from "@/components/ui/status";
-import { CONTACT_KINDS } from "@/lib/contact-kinds";
+import { CUSTOMER_STATUS, PARTNER_TYPE, optionsFor } from "@/components/ui/status";
+import { PARTNER_TYPES, PARTNER_TYPE_FIELD, type PartnerType } from "@/lib/contact-kinds";
 import type { Customer } from "@/lib/db/schema";
 import type { TeamMember } from "@/lib/data/common";
 import type { ActionState } from "@/lib/actions/shared";
@@ -24,12 +24,15 @@ export function CustomerForm({
   action,
   customer,
   team,
+  initialType = "client",
   submitLabel,
   cancelHref,
 }: {
   action: (prev: ActionState | undefined, formData: FormData) => Promise<ActionState>;
   customer?: Customer;
   team: TeamMember[];
+  /** For a new partner: the type ticked to begin with. */
+  initialType?: PartnerType;
   submitLabel: string;
   cancelHref: string;
 }) {
@@ -77,21 +80,27 @@ export function CustomerForm({
         </FormRow>
         <fieldset className="flex flex-col gap-2">
           <legend className="text-[12px] font-medium text-[var(--text-muted)]">
-            Relationship
+            Type
           </legend>
+          <p className="-mt-1 text-[12px] leading-5 text-[var(--text-faint)]">
+            Tick every one that applies. Client and Supplier match Xero; Media stays in The Gangway.
+          </p>
           <div className="flex flex-wrap gap-x-5 gap-y-2">
-            {CONTACT_KINDS.map((k) => (
-              <CheckboxField
-                key={k.field}
-                id={f(k.field)}
-                name={k.field}
-                label={k.label}
-                hint={k.hint}
-                defaultChecked={
-                  customer ? customer[k.field] : k.field === "isCustomer"
-                }
-              />
-            ))}
+            {PARTNER_TYPES.map((t) => {
+              const field = PARTNER_TYPE_FIELD[t];
+              return (
+                <CheckboxField
+                  // Remounts when the header's toggles change the stored
+                  // value, or a later save here would quietly undo them.
+                  key={`${t}-${customer?.[field]}`}
+                  id={f(field)}
+                  name={field}
+                  label={PARTNER_TYPE[t].label}
+                  hint={PARTNER_TYPE[t].hint}
+                  defaultChecked={customer ? customer[field] : t === initialType}
+                />
+              );
+            })}
           </div>
         </fieldset>
 

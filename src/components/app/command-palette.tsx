@@ -193,6 +193,22 @@ export function CommandPalette({ restricted = false }: { restricted?: boolean })
       run: () => go("/customers"),
       keywords: "clients accounts",
     },
+    {
+      id: "n-suppliers",
+      label: "Suppliers",
+      group: "Go to",
+      icon: Building2,
+      run: () => go("/customers?type=supplier"),
+      keywords: "business partners vendors",
+    },
+    {
+      id: "n-media",
+      label: "Media",
+      group: "Go to",
+      icon: Building2,
+      run: () => go("/customers?type=media"),
+      keywords: "business partners press journalists publications radio",
+    },
     { id: "n-people", label: "People", group: "Go to", icon: Users, run: () => go("/contacts") },
     {
       id: "n-projects",
