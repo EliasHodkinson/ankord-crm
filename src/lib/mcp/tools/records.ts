@@ -87,16 +87,20 @@ export function registerRecordTools(server: McpServer) {
     {
       title: "Search The Gangway",
       description:
-        "Search business partners (customers/suppliers), contacts, leads, projects and sales/purchasing documents by name, email, project code, document number or reference. Start here to find the id of a record.",
+        "Search business partners (clients, suppliers, media), contacts, leads, projects and sales/purchasing documents by name, email, project code, document number or reference. With partnerType, only partners of that type and the people at them. Start here to find the id of a record.",
       inputSchema: z.object({
         query: z.string().min(2).describe("At least two characters"),
         perKind: z.number().int().min(1).max(25).default(8).describe("Results per kind of record"),
+        partnerType: z
+          .enum(["client", "supplier", "media"])
+          .optional()
+          .describe("Only business partners of this type, and their contacts"),
       }),
       annotations: READ,
     },
-    ({ query, perKind }) =>
+    ({ query, perKind, partnerType }) =>
       read(async () => {
-        const hits = await searchEverything(query.trim(), perKind);
+        const hits = await searchEverything(query.trim(), perKind, { partnerType });
         return hits.map((h) => ({ ...h, url: link(h.href), href: undefined }));
       }),
   );
@@ -123,11 +127,14 @@ export function registerRecordTools(server: McpServer) {
     {
       title: "List business partners",
       description:
-        "Business partners (customers, suppliers, media) you can see, filtered by name/suburb, status or kind. Archived ones are left out unless asked for.",
+        "Business partners (clients, suppliers, media) you can see, filtered by name/suburb, status or kind. One partner can be several kinds. Archived ones are left out unless asked for.",
       inputSchema: z.object({
         query: z.string().optional(),
         status: z.enum(["prospect", "active", "on_hold", "former"]).optional(),
-        kind: z.enum(["customer", "supplier", "media"]).optional(),
+        kind: z
+          .enum(["client", "customer", "supplier", "media"])
+          .optional()
+          .describe('"client" and "customer" mean the same: someone Ankor\'d invoices'),
         includeArchived: z.boolean().default(false),
         limit: z.number().int().min(1).max(200).default(50),
       }),

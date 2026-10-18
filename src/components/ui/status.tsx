@@ -23,6 +23,37 @@ export const CUSTOMER_STATUS: Record<string, Entry> = {
   former: { label: "Former", tone: "muted" },
 };
 
+/**
+ * What a business partner is to Ankor'd (lib/contact-kinds.ts). One record can
+ * be several. Tones avoid ok/warn/danger, which are reserved for state, and
+ * Sunrise, which is reserved for the one accent.
+ */
+export const PARTNER_TYPE: Record<
+  "client" | "supplier" | "media",
+  Entry & { plural: string; hint: string }
+> = {
+  client: { label: "Client", plural: "Clients", tone: "brand", hint: "We invoice them" },
+  supplier: { label: "Supplier", plural: "Suppliers", tone: "info", hint: "They invoice us" },
+  media: { label: "Media", plural: "Media", tone: "neutral", hint: "Press, radio, publications" },
+};
+
+/** Shown on a partner with no type ticked, so it reads as unfinished. */
+export const PARTNER_TYPE_NONE: Entry = { label: "No type set", tone: "muted" };
+
+/** A partner's type badges, from typeBadges(); null means none set. */
+export function PartnerTypeBadges({ types }: { types: (keyof typeof PARTNER_TYPE)[] | null }) {
+  if (types === null) return <Badge tone={PARTNER_TYPE_NONE.tone}>{PARTNER_TYPE_NONE.label}</Badge>;
+  return (
+    <>
+      {types.map((t) => (
+        <Badge key={t} tone={PARTNER_TYPE[t].tone}>
+          {PARTNER_TYPE[t].label}
+        </Badge>
+      ))}
+    </>
+  );
+}
+
 export const PROJECT_STATUS: Record<string, Entry> = {
   planning: { label: "Planning", tone: "info" },
   active: { label: "Active", tone: "brand" },

@@ -1,19 +1,19 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Plus } from "lucide-react";
-import { and, asc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import { PageBody, PageHeader } from "@/components/app/page-header";
 import { ButtonLink } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Table, TableShell, Td, Th, Tr } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { CUSTOMER_STATUS, StatusBadge } from "@/components/ui/status";
 import {
-  isContactKindFilter,
-  KIND_FILTER_FIELD,
-  kindBadges,
-} from "@/lib/contact-kinds";
+  CUSTOMER_STATUS,
+  PARTNER_TYPE,
+  PartnerTypeBadges,
+  StatusBadge,
+} from "@/components/ui/status";
+import { partnerTypeParam, typeBadges } from "@/lib/contact-kinds";
 import { FilterBar } from "@/components/app/filter-bar";
 import {
   BulkBar,
@@ -22,84 +22,82 @@ import {
   Selection,
 } from "@/components/app/bulk-bar";
 import { SavedViews } from "@/components/app/saved-views";
-import { getDb } from "@/lib/db";
-import { contacts, customers, projects, users } from "@/lib/db/schema";
-import { relativeTime } from "@/lib/utils";
+import { money, relativeTime } from "@/lib/utils";
 import { getThresholds, listTeam } from "@/lib/data/common";
 import { listSavedViews } from "@/lib/data/saved-views";
+import {
+  countPartnerTypes,
+  listPartners,
+  PARTNER_QUICK_FILTERS,
+} from "@/lib/data/customers";
 import { heatOf, heatSummary } from "@/lib/staleness";
 import { requireUser } from "@/lib/auth/session";
-import { customerScope, getAccess } from "@/lib/access";
+import { getAccess } from "@/lib/access";
+import { PartnerTypeSwitch } from "./type-switch";
 
 export const metadata: Metadata = { title: "Business Partners" };
 export const dynamic = "force-dynamic";
 
+const dash = <span className="text-[var(--text-faint)]">—</span>;
+
+/** A money cell that fades to a dash at zero, so the live amounts stand out. */
+function Amount({ value }: { value: number | null }) {
+  return value ? <span className="font-medium">{money(value)}</span> : dash;
+}
+
 export default async function CustomersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; kind?: string; q?: string }>;
+  searchParams: Promise<{
+    type?: string;
+    kind?: string;
+    status?: string;
+    q?: string;
+    only?: string;
+  }>;
 }) {
   const { user } = await requireUser();
   const access = await getAccess();
-  const { status, kind, q } = await searchParams;
-  const db = getDb();
+  const params = await searchParams;
+  const { status, q, only } = params;
+  const type = partnerTypeParam(params.type, params.kind);
+  const quickFilters = PARTNER_QUICK_FILTERS[type];
+  const quick = quickFilters.find((f) => f.value === only);
 
-  const filters: SQL[] = [];
-  const scope = customerScope(access, customers.id);
-  if (scope) filters.push(scope);
-  if (status && status !== "all") {
-    filters.push(eq(customers.status, status as "active"));
-  }
-  if (isContactKindFilter(kind)) {
-    // Flags are independent, so a record that is several kinds appears under
-    // each of them — filtering to media must not hide a customer who is press.
-    filters.push(eq(customers[KIND_FILTER_FIELD[kind]], true));
-  }
-  if (q) {
-    filters.push(
-      or(
-        ilike(customers.name, `%${q}%`),
-        ilike(customers.legalName, `%${q}%`),
-        ilike(customers.suburb, `%${q}%`),
-      )!,
-    );
-  }
-
-  const [rows, thresholds, team, views] = await Promise.all([
-    db
-      .select({
-        customer: customers,
-        ownerName: users.name,
-        ownerPhoto: users.photo,
-        contactCount: sql<number>`(select count(*)::int from ${contacts} where ${contacts.customerId} = ${customers.id} and ${contacts.archivedAt} is null)`,
-        activeProjects: sql<number>`(select count(*)::int from ${projects} where ${projects.customerId} = ${customers.id} and ${projects.status} in ('planning','active','on_hold'))`,
-      })
-      .from(customers)
-      .leftJoin(users, eq(users.id, customers.ownerId))
-      .where(filters.length ? and(...filters) : undefined)
-      .orderBy(asc(customers.name))
-      .limit(300),
+  const [rows, counts, thresholds, team, views] = await Promise.all([
+    listPartners({ type, status, q, only }),
+    countPartnerTypes({ status, q }),
     getThresholds(),
     listTeam(),
     listSavedViews("customers"),
   ]);
 
+  const noun =
+    type === "all"
+      ? rows.length === 1
+        ? "business partner"
+        : "business partners"
+      : rows.length === 1
+        ? PARTNER_TYPE[type].label.toLowerCase()
+        : PARTNER_TYPE[type].plural.toLowerCase();
+  const newHref = type === "all" ? "/customers/new" : `/customers/new?type=${type}`;
+
   return (
     <>
       <PageHeader
         title="Business Partners"
-        description="Everyone Ankor'd deals with — customers, suppliers, media, the people inside them, and what's running right now."
+        description="Everyone Ankor'd deals with — clients, suppliers, media, the people inside them, and what's running right now."
         meta={
           <p className="text-[13px] text-[var(--text-muted)]">
             <span className="font-semibold text-[var(--text)]">
               {rows.length}
             </span>{" "}
-            {rows.length === 1 ? "customer" : "customers"} shown
+            {noun} shown
           </p>
         }
         actions={
           access.restricted ? null : (
-            <ButtonLink href="/customers/new" variant="primary">
+            <ButtonLink href={newHref} variant="primary">
               <Plus />
               Create Business Partner
             </ButtonLink>
@@ -108,20 +106,21 @@ export default async function CustomersPage({
       />
 
       <PageBody className="flex flex-col gap-4">
+        <PartnerTypeSwitch current={type} counts={counts} params={params} />
+
         <SavedViews entity="customers" views={views} currentUserId={user.id} />
 
         <FilterBar
-          searchPlaceholder="Search business partners…"
+          searchPlaceholder={`Search ${type === "all" ? "business partners" : PARTNER_TYPE[type].plural.toLowerCase()}…`}
+          keep={["type"]}
           filters={[
             {
-              param: "kind",
-              label: "Relationship",
-              defaultValue: "all",
+              param: "only",
+              label: "Show",
+              defaultValue: "",
               options: [
-                { value: "all", label: "Everyone" },
-                { value: "customer", label: "Customers" },
-                { value: "supplier", label: "Suppliers" },
-                { value: "media", label: "Media" },
+                { value: "", label: type === "all" ? "Everyone" : `All ${PARTNER_TYPE[type].plural.toLowerCase()}` },
+                ...quickFilters,
               ],
             },
             {
@@ -145,22 +144,28 @@ export default async function CustomersPage({
           <div className="rounded-[10px] border border-[var(--border)] bg-[var(--surface)]">
             <EmptyState
               title={
-                q || status || kind
+                q || (status && status !== "all") || quick
                   ? "Nothing matches that"
                   : access.restricted
                     ? "Nothing has been shared with you yet"
-                    : "No business partners yet"
+                    : type === "all"
+                      ? "No business partners yet"
+                      : `No ${PARTNER_TYPE[type].plural.toLowerCase()} yet`
               }
               description={
-                q || status || kind
-                  ? "Try a different relationship or status, or clear the search."
+                q || (status && status !== "all") || quick
+                  ? "Try another tab or status, or clear the search."
                   : access.restricted
                     ? "An Ankor'd admin decides which business partners you can see. Once they share one, it appears here."
-                    : "Add a business Ankor'd deals with — a customer, a supplier, a media contact. You can also convert a won lead, which brings its contact and history across."
+                    : type === "media"
+                      ? "Add a publication, station or journalist's outlet, or tick Media on an existing partner."
+                      : type === "supplier"
+                        ? "Add a business that bills Ankor'd, or tick Supplier on an existing partner. Contacts imported from Xero arrive with it already set."
+                        : "Add a business Ankor'd deals with — a client, a supplier, a media contact. You can also convert a won lead, which brings its contact and history across."
               }
               action={
                 access.restricted ? undefined : (
-                  <ButtonLink href="/customers/new" variant="primary">
+                  <ButtonLink href={newHref} variant="primary">
                     <Plus />
                     Create Business Partner
                   </ButtonLink>
@@ -178,11 +183,35 @@ export default async function CustomersPage({
                     <Th className="w-9">
                       <HeaderCheckbox ids={rows.map((r) => r.customer.id)} />
                     </Th>
-                    <Th>Business partner</Th>
+                    <Th>{type === "media" ? "Outlet" : "Business partner"}</Th>
                     <Th>Status</Th>
-                    <Th>Industry</Th>
-                    <Th numeric>People</Th>
-                    <Th numeric>Live projects</Th>
+                    {type === "media" ? (
+                      <>
+                        <Th>Contact</Th>
+                        <Th>Email</Th>
+                        <Th>Phone</Th>
+                      </>
+                    ) : (
+                      <>
+                        <Th>Industry</Th>
+                        <Th numeric>People</Th>
+                      </>
+                    )}
+                    {type === "client" || type === "all" ? (
+                      <Th numeric>Live projects</Th>
+                    ) : null}
+                    {type === "client" ? (
+                      <>
+                        <Th numeric>Open quotes</Th>
+                        <Th numeric>Owing</Th>
+                      </>
+                    ) : null}
+                    {type === "supplier" ? (
+                      <>
+                        <Th numeric>Open POs</Th>
+                        <Th numeric>Bills to pay</Th>
+                      </>
+                    ) : null}
                     <Th>Owner</Th>
                     <Th>Last spoke</Th>
                   </tr>
@@ -194,6 +223,8 @@ export default async function CustomersPage({
                       row.customer.createdAt,
                       thresholds.customer,
                     );
+                    const email = row.contactEmail ?? row.customer.email;
+                    const phone = row.contactPhone ?? row.customer.phone;
                     return (
                       <Tr key={row.customer.id}>
                         <Td>
@@ -209,7 +240,11 @@ export default async function CustomersPage({
                           >
                             {row.customer.name}
                           </Link>
-                          {row.customer.suburb ? (
+                          {type === "media" && row.customer.website ? (
+                            <span className="block truncate text-[12px] text-[var(--text-muted)]">
+                              {row.customer.website.replace(/^https?:\/\//, "")}
+                            </span>
+                          ) : row.customer.suburb ? (
                             <span className="block truncate text-[12px] text-[var(--text-muted)]">
                               {[row.customer.suburb, row.customer.state]
                                 .filter(Boolean)
@@ -224,26 +259,104 @@ export default async function CustomersPage({
                               value={row.customer.status}
                               dot
                             />
-                            {kindBadges(row.customer).map((label) => (
-                              <Badge key={label} tone="neutral">
-                                {label}
-                              </Badge>
-                            ))}
+                            <PartnerTypeBadges
+                              types={typeBadges(
+                                row.customer,
+                                type === "all" ? undefined : type,
+                              )}
+                            />
                           </span>
                         </Td>
-                        <Td className="text-[var(--text-muted)]">
-                          {row.customer.industry ?? "—"}
-                        </Td>
-                        <Td numeric>{row.contactCount}</Td>
-                        <Td numeric>
-                          {row.activeProjects > 0 ? (
-                            <span className="font-medium">
-                              {row.activeProjects}
-                            </span>
-                          ) : (
-                            <span className="text-[var(--text-faint)]">—</span>
-                          )}
-                        </Td>
+                        {type === "media" ? (
+                          <>
+                            <Td className="max-w-56">
+                              {row.contactName ? (
+                                <>
+                                  <span className="block truncate">{row.contactName}</span>
+                                  {row.contactTitle ? (
+                                    <span className="block truncate text-[12px] text-[var(--text-muted)]">
+                                      {row.contactTitle}
+                                    </span>
+                                  ) : null}
+                                </>
+                              ) : (
+                                dash
+                              )}
+                            </Td>
+                            <Td className="max-w-56">
+                              {email ? (
+                                <a
+                                  href={`mailto:${email}`}
+                                  className="block truncate text-[var(--text-muted)] hover:text-[var(--text)] hover:underline underline-offset-2"
+                                >
+                                  {email}
+                                </a>
+                              ) : (
+                                dash
+                              )}
+                            </Td>
+                            <Td className="whitespace-nowrap">
+                              {phone ? (
+                                <a
+                                  href={`tel:${phone.replace(/\s/g, "")}`}
+                                  className="tabular text-[var(--text-muted)] hover:text-[var(--text)]"
+                                >
+                                  {phone}
+                                </a>
+                              ) : (
+                                dash
+                              )}
+                            </Td>
+                          </>
+                        ) : (
+                          <>
+                            <Td className="text-[var(--text-muted)]">
+                              {row.customer.industry ?? "—"}
+                            </Td>
+                            <Td numeric>{row.contactCount}</Td>
+                          </>
+                        )}
+                        {type === "client" || type === "all" ? (
+                          <Td numeric>
+                            {row.activeProjects ? (
+                              <span className="font-medium">
+                                {row.activeProjects}
+                              </span>
+                            ) : (
+                              dash
+                            )}
+                          </Td>
+                        ) : null}
+                        {type === "client" ? (
+                          <>
+                            <Td numeric>
+                              <Amount value={row.openQuotes} />
+                            </Td>
+                            <Td numeric>
+                              <Amount value={row.owing} />
+                            </Td>
+                          </>
+                        ) : null}
+                        {type === "supplier" ? (
+                          <>
+                            <Td numeric>
+                              {row.openPos ? (
+                                <span>
+                                  <span className="font-medium">{row.openPos}</span>
+                                  <span className="text-[var(--text-muted)]">
+                                    {" · "}
+                                    {money(row.openPoValue)}
+                                  </span>
+                                </span>
+                              ) : (
+                                dash
+                              )}
+                            </Td>
+                            <Td numeric>
+                              <Amount value={row.billsDue} />
+                            </Td>
+                          </>
+                        ) : null}
                         <Td>
                           {row.ownerName ? (
                             <span className="flex items-center gap-1.5">

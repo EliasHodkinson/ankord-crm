@@ -3,6 +3,12 @@ import { and, asc, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from "d
 import { getDb } from "@/lib/db";
 import { contacts, customers, leads, projectSteps, projects, users } from "@/lib/db/schema";
 import { assertLead, assertStaff, customerScope, getAccess } from "@/lib/access";
+import {
+  kindToType,
+  PARTNER_TYPE_FIELD,
+  type ContactKindFilter,
+  type PartnerType,
+} from "@/lib/contact-kinds";
 
 /**
  * Plain lists of records, for the MCP tools. The pages build their own richer
@@ -15,7 +21,7 @@ const like = (q: string) => `%${q.trim()}%`;
 export async function listCustomerRows(filter: {
   q?: string;
   status?: "prospect" | "active" | "on_hold" | "former";
-  kind?: "customer" | "supplier" | "media";
+  kind?: ContactKindFilter | PartnerType;
   includeArchived?: boolean;
   limit?: number;
 }) {
@@ -23,9 +29,7 @@ export async function listCustomerRows(filter: {
   const where: (SQL | undefined)[] = [customerScope(access, customers.id)];
   if (!filter.includeArchived) where.push(isNull(customers.archivedAt));
   if (filter.status) where.push(eq(customers.status, filter.status));
-  if (filter.kind === "customer") where.push(eq(customers.isCustomer, true));
-  if (filter.kind === "supplier") where.push(eq(customers.isSupplier, true));
-  if (filter.kind === "media") where.push(eq(customers.isMedia, true));
+  if (filter.kind) where.push(eq(customers[PARTNER_TYPE_FIELD[kindToType(filter.kind)]], true));
   if (filter.q) {
     where.push(
       or(

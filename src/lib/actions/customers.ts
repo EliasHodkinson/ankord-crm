@@ -10,6 +10,9 @@ import { requireUser } from "@/lib/auth/session";
 import { assertCustomer, assertStaff } from "@/lib/access";
 import { autoProvisionFolder } from "./files";
 import { refreshBriefIfPresent } from "./brief";
+import { isPartnerType, PARTNER_TYPE_FIELD } from "@/lib/contact-kinds";
+
+const PARTNER_TYPE_LABEL = { client: "a client", supplier: "a supplier", media: "media" } as const;
 import {
   fromZod,
   logActivity,
@@ -147,4 +150,33 @@ export async function archiveCustomer(id: string): Promise<void> {
 
   revalidatePath("/customers");
   redirect(`/customers/${id}`);
+}
+
+/**
+ * Ticks or unticks one type from the record's header, without the whole form.
+ * Client and Supplier stay Gangway-side here too — nothing is pushed to Xero.
+ */
+export async function setPartnerType(id: string, type: string, on: boolean): Promise<ActionState> {
+  await requireUser();
+  await assertCustomer(id);
+  if (!isPartnerType(type)) return { ok: false, message: "That isn't a business partner type." };
+
+  await getDb()
+    .update(customers)
+    .set({ [PARTNER_TYPE_FIELD[type]]: on === true, updatedAt: new Date() })
+    .where(eq(customers.id, id));
+
+  await refreshBriefIfPresent(id);
+  const label = PARTNER_TYPE_LABEL[type];
+  await logActivity({
+    entityType: "customer",
+    entityId: id,
+    customerId: id,
+    verb: "updated",
+    summary: on ? `Marked as ${label}` : `No longer marked as ${label}`,
+  });
+
+  revalidatePath(`/customers/${id}`);
+  revalidatePath("/customers");
+  return { ok: true, message: on ? `Marked as ${label}.` : `No longer ${label}.` };
 }

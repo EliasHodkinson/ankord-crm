@@ -41,7 +41,7 @@ import { readXeroConnection } from "@/lib/xero/auth";
 import { updateCustomer } from "@/lib/actions/customers";
 import { requireUser } from "@/lib/auth/session";
 import { getAccess } from "@/lib/access";
-import { kindBadges } from "@/lib/contact-kinds";
+import { PartnerTypeToggles } from "./type-toggles";
 import { formatDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -105,11 +105,7 @@ export default async function CustomerPage({
         eyebrow={
           <span className="flex flex-wrap items-center gap-1.5">
             <StatusBadge map={CUSTOMER_STATUS} value={customer.status} dot />
-            {kindBadges(customer).map((label) => (
-              <Badge key={label} tone="neutral">
-                {label}
-              </Badge>
-            ))}
+            <PartnerTypeToggles customerId={customer.id} kinds={customer} />
           </span>
         }
         description={customer.industry}
