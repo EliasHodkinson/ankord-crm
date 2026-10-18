@@ -174,7 +174,7 @@ export async function importXeroItems(): Promise<ActionState> {
 }
 
 /**
- * Imports quotes or invoices. `params` is the screen's query string (source,
+ * Imports quotes, invoices, purchase orders or bills. `params` is the screen's query string (source,
  * mode, from, to, numbers), re-parsed here; `only` is the ticked Xero IDs.
  */
 export async function importXeroDocuments(
@@ -190,7 +190,9 @@ export async function importXeroDocuments(
     const source = parseSource(params.source);
     const report = await importDocuments(source, parseScope(params), user.id, ids?.data);
 
-    revalidatePath(source === "quotes" ? "/sales/quotes" : "/sales/invoices");
+    revalidatePath(
+      { quotes: "/sales/quotes", invoices: "/sales/invoices", purchase_orders: "/purchasing/orders", bills: "/purchasing/bills" }[source],
+    );
     revalidatePath("/sales/import");
     for (const id of report.touched) revalidatePath(`/customers/${id}`);
 

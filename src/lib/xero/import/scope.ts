@@ -3,8 +3,7 @@
  * from its form and the server parses it back from the query string.
  */
 
-/** Phase B adds "purchase_orders" and "bills". */
-export const IMPORT_SOURCE_KEYS = ["quotes", "invoices"] as const;
+export const IMPORT_SOURCE_KEYS = ["quotes", "invoices", "purchase_orders", "bills"] as const;
 export type ImportSourceKey = (typeof IMPORT_SOURCE_KEYS)[number];
 
 export type ImportScope =

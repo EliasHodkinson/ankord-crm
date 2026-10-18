@@ -8,11 +8,14 @@ import { Avatar } from "@/components/ui/avatar";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Table, TableShell, Td, Th, Tr } from "@/components/ui/table";
 import {
+  DOCUMENT_STATUS,
   documentStatus,
   FULFILMENT,
+  SHIPMENT_STATE,
   StatusBadge,
   XERO_SYNC,
 } from "@/components/ui/status";
+import { inTransitAmong } from "@/lib/data/stock";
 import { Badge } from "@/components/ui/badge";
 import { listDocuments, PAGE_SIZE, type DocumentFilters } from "@/lib/data/documents";
 import { listSavedViews } from "@/lib/data/saved-views";
@@ -23,8 +26,8 @@ import { formatMoney } from "@/lib/sales/money";
 import { formatDate, isoDate } from "@/lib/utils";
 
 /**
- * Every document list — quotes, orders, invoices, and in later phases POs,
- * receipts and bills — is this one component, configured by type.
+ * Every document list — quotes, orders, invoices, deliveries, POs, receipts
+ * and bills — is this one component, configured by type.
  */
 
 const DESCRIPTIONS: Partial<Record<DocType, string>> = {
@@ -32,7 +35,18 @@ const DESCRIPTIONS: Partial<Record<DocType, string>> = {
   sales_order:
     "The job, as the customer ordered it. Each line shows whether it still needs ordering, is on order, or is ready.",
   invoice: "Created in Xero as drafts, approved here or in Xero, and sent from Xero. Paid status comes back from Xero.",
+  delivery: "Goods handed over against a reserve invoice. Gangway-only; Xero's invoice gets a note.",
+  purchase_order:
+    "Created in Xero as drafts and sent from Xero. Couriers' tracking, receipts and bills are recorded against them here.",
+  goods_receipt: "Stock booked in against a purchase order. Received goods are allocated to the job they were ordered for.",
+  bill: "Suppliers' invoices against our purchase orders, created in Xero and paid there. Bills without a PO stay in Xero.",
 };
+
+/** Which part of the rail a type lives under. */
+const SECTION = (type: DocType) => (DOC_TYPES[type].side === "supplier" ? "Purchasing" : "Sales");
+
+/** Types made from another document, not from a New button. */
+const NO_NEW: DocType[] = ["goods_receipt", "delivery", "bill"];
 
 export async function DocumentList({ type, filters }: { type: DocType; filters: DocumentFilters }) {
   const { user } = await requireUser();
@@ -44,8 +58,13 @@ export async function DocumentList({ type, filters }: { type: DocType; filters: 
     listSavedViews(config.entity),
   ]);
   const today = isoDate();
-  const showFulfilment = type === "sales_order";
-  const isInvoice = type === "invoice";
+  const showFulfilment = type === "sales_order" || type === "purchase_order" || type === "invoice";
+  const isInvoice = type === "invoice" || type === "bill";
+  const transit =
+    type === "sales_order" || type === "purchase_order" || type === "invoice"
+      ? await inTransitAmong(rows.map((r) => r.doc.id))
+      : new Set<string>();
+  const labels = DOCUMENT_STATUS[type] ?? {};
   const pages = Math.max(1, Math.ceil(count / PAGE_SIZE));
 
   const filterSpecs: FilterSpec[] = [
@@ -56,8 +75,8 @@ export async function DocumentList({ type, filters }: { type: DocType; filters: 
       options: [
         { value: "live", label: "Draft and open" },
         { value: "draft", label: "Drafts" },
-        { value: "open", label: type === "quote" ? "Sent" : type === "invoice" ? "Awaiting payment" : "Confirmed" },
-        { value: "closed", label: type === "invoice" ? "Paid" : "Closed" },
+        { value: "open", label: labels.open?.label ?? "Open" },
+        ...(labels.closed ? [{ value: "closed", label: labels.closed.label }] : []),
         { value: "cancelled", label: "Cancelled" },
         { value: "all", label: "Everything" },
       ],
@@ -72,7 +91,20 @@ export async function DocumentList({ type, filters }: { type: DocType; filters: 
       ],
     },
   ];
-  if (showFulfilment) {
+  if (type === "purchase_order") {
+    filterSpecs.push({
+      param: "fulfilment",
+      label: "Received",
+      defaultValue: "",
+      options: [
+        { value: "", label: "Any" },
+        { value: "to_receive", label: "To receive" },
+        { value: "part_received", label: "Part received" },
+        { value: "received", label: "Received" },
+      ],
+    });
+  }
+  if (type === "sales_order") {
     filterSpecs.push({
       param: "fulfilment",
       label: "Fulfilment",
@@ -123,14 +155,14 @@ export async function DocumentList({ type, filters }: { type: DocType; filters: 
       <PageHeader
         title={config.plural}
         description={DESCRIPTIONS[type]}
-        crumbs={[{ label: "Sales" }, { label: config.plural }]}
+        crumbs={[{ label: SECTION(type) }, { label: config.plural }]}
         meta={
           <p className="text-[13px] text-[var(--text-muted)]">
             <span className="font-semibold text-[var(--text)]">{count}</span> shown
           </p>
         }
         actions={
-          canWrite && type !== "sales_order" ? (
+          NO_NEW.includes(type) ? null : canWrite && type !== "sales_order" ? (
             <ButtonLink href={`${config.base}/new`} variant="primary">
               <Plus />
               New {config.label.toLowerCase()}
@@ -158,10 +190,18 @@ export async function DocumentList({ type, filters }: { type: DocType; filters: 
                     ? "Sales orders are usually made by converting an accepted quote. You can also start one from scratch."
                     : type === "invoice"
                       ? "Invoices usually come from a sales order or a quote. A blank one is fine for one-off services."
-                      : "Write a quote here; it lands in Xero as a draft with Xero's number, ready to send."
+                      : type === "purchase_order"
+                        ? "Raise purchase orders from a sales order, start one here, or import the ones already in Xero."
+                        : type === "goods_receipt"
+                          ? "Receipts are made with Receive on a purchase order."
+                          : type === "bill"
+                            ? "Bills are entered with Enter bill on a purchase order, or imported from Xero."
+                            : type === "delivery"
+                              ? "Deliveries are made with Deliver on a reserve invoice."
+                              : "Write a quote here; it lands in Xero as a draft with Xero's number, ready to send."
               }
               action={
-                canWrite && !hasFilters ? (
+                canWrite && !hasFilters && !NO_NEW.includes(type) ? (
                   <ButtonLink href={`${config.base}/new`} variant="primary">
                     <Plus />
                     New {config.label.toLowerCase()}
@@ -237,7 +277,13 @@ export async function DocumentList({ type, filters }: { type: DocType; filters: 
                         </Badge>
                       </Td>
                       {showFulfilment ? (
-                        <Td>{doc.fulfilment && doc.status !== "cancelled" ? <StatusBadge map={FULFILMENT} value={doc.fulfilment} /> : "—"}</Td>
+                        <Td>
+                          <span className="flex flex-wrap items-center gap-1">
+                            {doc.fulfilment && doc.status !== "cancelled" ? <StatusBadge map={FULFILMENT} value={doc.fulfilment} /> : null}
+                            {transit.has(doc.id) ? <StatusBadge map={SHIPMENT_STATE} value="in_transit" /> : null}
+                            {!doc.fulfilment && !transit.has(doc.id) ? "—" : null}
+                          </span>
+                        </Td>
                       ) : null}
                       {config.xero && !access.restricted ? (
                         <Td>

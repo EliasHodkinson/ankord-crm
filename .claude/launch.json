@@ -21,6 +21,18 @@
         "3200"
       ],
       "port": 3200
+    },
+    {
+      "name": "ankord-crm-purchasing",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "-p",
+        "3010"
+      ],
+      "port": 3010
     }
   ]
 }

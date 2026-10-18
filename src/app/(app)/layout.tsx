@@ -24,7 +24,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // A number on the rail is the cheapest reminder there is.
   const [due, sales] = await Promise.all([
     dueCount(user.id).catch(() => 0),
-    salesCounts().catch(() => ({ toOrder: 0, overdue: 0 })),
+    salesCounts().catch(() => ({ toOrder: 0, overdue: 0, inTransit: 0 })),
   ]);
   const counts = { due, ...sales };
 

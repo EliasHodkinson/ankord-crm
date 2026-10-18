@@ -1345,6 +1345,40 @@ Done when:
    - a receipt whose stock was delivered can't be cancelled;
    - a duplicate supplier invoice number is refused.
 
+**As built (2026-10-18, migration 0016).** Additions and decisions beyond
+the list above:
+
+- **Courier tracking.** `shipments` (carrier, tracking number and link, sent,
+  ETA, notes, `receiptId`), several per PO. Links are built from the carrier
+  (`lib/sales/carriers.ts`) or typed for "Other". A shipment is in transit
+  until a receipt closes it or the PO is fully received; past its ETA it says
+  so. It shows on the PO, on the sales lines the PO was raised for, and as a
+  chip on the SO, PO and invoice lists. Adding one writes a Xero PO history note.
+- **Demand lines.** A PO line's `sourceLineId`, and `stock_allocations`
+  (column still named `sales_order_line_id`), may point at a sales-order line
+  **or a reserve-invoice line**, for an invoice raised before the stock was
+  bought with no order behind it. Allocations are consumed oldest first as the
+  demand line's `qtyDelivered` grows (`recomputeConsumption`).
+- **Reserve invoices and deliveries (§5.4–5.5) pulled forward** so an invoice
+  paid in Xero before the goods were bought can be carried through:
+  "Goods to follow" on any invoice with stock lines (and back while nothing
+  is delivered, ordered or allocated), linking a PO to an invoice makes it
+  reserve, and Deliver makes a DN- with its Xero note and cancel.
+- **Import (§8.8) covers POs and bills.** PO statuses: DRAFT/SUBMITTED → draft,
+  AUTHORISED/BILLED → open. A PO Xero calls BILLED counts as billed with or
+  without a bill here. "Open" POs include BILLED ones from the last 120 days.
+  Bills are found by supplier number or by a PO number in their Reference, and
+  a bill whose Reference names exactly one of the supplier's POs is entered
+  against it at import. Linking or adding a shipment marks a document as
+  worked on here, so re-imports only refresh its Xero status.
+- **Stock.** Invoices imported from Xero are not counted as stock going out —
+  those goods left before The Gangway counted stock. A PO whose items are not
+  physical goods is still received line by line. Switching an item to
+  physical goods updates its lines on live documents; linking a PO or marking
+  goods to follow refreshes the flag on those documents, paid ones included.
+- **Pull** reads POs (`If-Modified-Since` listing, or one by one) and bills
+  with invoices.
+
 ### Phase C: reserve invoices, deliveries, payments, hardening
 
 Build:

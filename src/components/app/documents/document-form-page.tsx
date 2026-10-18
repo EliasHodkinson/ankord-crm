@@ -40,12 +40,13 @@ export async function DocumentFormPage({
 }) {
   const { user } = await requireUser();
   const config = DOC_TYPES[type];
-  if (!config.available) notFound();
+  if (!config.available || config.recordOnly) notFound();
+  const section = side0(type) === "supplier" ? "Purchasing" : "Sales";
 
   if (!canWriteSales(user.role)) {
     return (
       <>
-        <PageHeader title={`New ${config.label.toLowerCase()}`} crumbs={[{ label: "Sales" }, { label: config.plural, href: config.base }]} />
+        <PageHeader title={`New ${config.label.toLowerCase()}`} crumbs={[{ label: section }, { label: config.plural, href: config.base }]} />
         <PageBody>
           <div className="rounded-[10px] border border-[var(--border)] bg-[var(--surface)]">
             <EmptyState
@@ -95,9 +96,9 @@ export async function DocumentFormPage({
     const { doc } = detail;
     const editable =
       doc.status !== "cancelled" &&
-      !(doc.status === "closed" && (type === "quote" || type === "sales_order"));
+      !(doc.status === "closed" && (type === "quote" || type === "sales_order" || type === "purchase_order"));
     if (!editable) redirect(docHref(doc));
-    locked = type === "invoice" && doc.status !== "draft";
+    locked = (type === "invoice" || type === "bill") && doc.status !== "draft";
     isReserve = doc.isReserve;
     version = doc.version;
     title = `Edit ${documentTitle(doc)}`;
@@ -120,6 +121,7 @@ export async function DocumentFormPage({
       remarks: doc.remarks,
       internalNotes: doc.internalNotes,
       isReserve: doc.isReserve,
+      supplierInvoiceNumber: doc.supplierInvoiceNumber,
     };
     lines = detail.lines.map((l) => ({
       key: l.id,
@@ -179,7 +181,7 @@ export async function DocumentFormPage({
   }
 
   const partner = header.partnerId ? await partnerDefaults(header.partnerId, side) : null;
-  if (type === "invoice" && !documentId && partner && header.termsDays === null) {
+  if ((type === "invoice" || type === "bill") && !documentId && partner && header.termsDays === null) {
     header = { ...header, termsDays: partner.termsDays };
   }
 
@@ -187,11 +189,13 @@ export async function DocumentFormPage({
     <>
       <PageHeader
         title={title}
-        crumbs={[{ label: "Sales" }, { label: config.plural, href: config.base }, { label: documentId ? "Edit" : "New" }]}
+        crumbs={[{ label: section }, { label: config.plural, href: config.base }, { label: documentId ? "Edit" : "New" }]}
         description={
-          config.xero
-            ? `Saving creates it in Xero as a draft, and Xero's number comes back here. Send it from Xero.`
-            : `Sales orders stay in The Gangway and are numbered here. Xero sees the number on what is drawn from them.`
+          type === "bill"
+            ? "Saving creates the bill in Xero as a draft under the supplier's invoice number. Pay it in Xero."
+            : config.xero
+              ? `Saving creates it in Xero as a draft, and Xero's number comes back here. Send it from Xero.`
+              : `Sales orders stay in The Gangway and are numbered here. Xero sees the number on what is drawn from them.`
         }
       />
       <PageBody className="max-w-[72rem]">
@@ -229,9 +233,10 @@ export async function DocumentFormPage({
       contactId: null,
       reference: null,
       docDate: isoDate(),
-      dueDate: t === "quote" ? isoDate(validityDays) : t === "sales_order" ? isoDate(14) : null,
+      dueDate: t === "quote" ? isoDate(validityDays) : t === "sales_order" || t === "purchase_order" ? isoDate(14) : null,
       termsDays: null,
-      shipToText: null,
+      // Suppliers deliver to us unless told otherwise.
+      shipToText: t === "purchase_order" ? (settings?.deliveryAddress ?? null) : null,
       ownerId: user.id,
       projectId: null,
       amountsAre: "exclusive",
@@ -244,6 +249,8 @@ export async function DocumentFormPage({
     };
   }
 }
+
+const side0 = (t: DocType) => DOC_TYPES[t].side;
 
 /** "500.0000" → "500" for the editor's inputs. */
 function trim(value: string): string {

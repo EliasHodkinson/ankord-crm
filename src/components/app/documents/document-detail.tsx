@@ -11,6 +11,12 @@ import { DocumentActions, type DocAction } from "./document-actions";
 import { XeroDocPanel } from "./xero-doc-panel";
 import { LinesView } from "./lines-view";
 import { TotalsBox } from "./document-editor";
+import { ShipmentsPanel } from "./shipments-panel";
+import { LinkBillPanel, LinkSalesPanel } from "./link-panels";
+import { AllocationsPanel } from "./allocations-panel";
+import { allocationsFor, availableStock, shipmentsFor, trackingForSales } from "@/lib/data/stock";
+import { billOptions, demandCounters, draftShortfalls, salesLinksFor, suggestedSalesFor } from "@/lib/data/purchasing";
+import { getDb } from "@/lib/db";
 import {
   documentActivity,
   documentPayments,
@@ -23,7 +29,8 @@ import {
 import { canWriteSales, requireUser } from "@/lib/auth/session";
 import { getAccess } from "@/lib/access";
 import { DOC_TYPES, docHref, documentTitle, typeLabel, type DocType } from "@/lib/sales/doc-types";
-import { formatMoney, num, toCents } from "@/lib/sales/money";
+import { lineState } from "@/lib/sales/fulfilment";
+import { formatMoney, formatQty, num, toCents } from "@/lib/sales/money";
 import { xeroWebUrl } from "@/lib/xero/links";
 import { formatDate, formatDateTime, isoDate, relativeTime } from "@/lib/utils";
 
@@ -44,12 +51,28 @@ export async function DocumentDetailPage({
   const { doc, lines, partner, owner, project, salesOrder } = detail;
 
   const hasPayments = type === "invoice" || type === "bill";
-  const [related, trail, problem, payments] = await Promise.all([
-    relatedDocuments(doc),
-    documentActivity(doc.id),
-    lastXeroProblem(doc.id),
-    hasPayments && !access.restricted ? documentPayments(doc.id) : Promise.resolve([]),
-  ]);
+  const isPo = type === "purchase_order";
+  const reserve = type === "invoice" && doc.isReserve;
+  const demandDoc = (type === "sales_order" && doc.status === "open") || (reserve && doc.status !== "cancelled");
+  const itemLines = lines.filter((l) => l.rowType === "item");
+  const stockItems = [...new Set(itemLines.filter((l) => l.tracksStock && l.itemId).map((l) => l.itemId!))];
+  const [related, trail, problem, payments, shipped, tracking, allocations, stock, links, suggested, demand, poChoices, short] =
+    await Promise.all([
+      relatedDocuments(doc),
+      documentActivity(doc.id),
+      lastXeroProblem(doc.id),
+      hasPayments && !access.restricted ? documentPayments(doc.id) : Promise.resolve([]),
+      isPo ? shipmentsFor(doc.id) : Promise.resolve([]),
+      type === "sales_order" || reserve ? trackingForSales(doc.id) : Promise.resolve(new Map()),
+      demandDoc ? allocationsFor(doc.id) : Promise.resolve([]),
+      demandDoc ? availableStock(getDb(), stockItems) : Promise.resolve(new Map()),
+      isPo ? salesLinksFor(doc.id) : Promise.resolve([]),
+      isPo ? suggestedSalesFor(doc) : Promise.resolve([]),
+      reserve ? demandCounters(doc.id) : Promise.resolve({} as Record<string, { ordered: string; allocated: string }>),
+      type === "bill" && !itemLines.some((l) => l.baseLineId) ? billOptions(doc) : Promise.resolve([]),
+      type === "invoice" && !doc.isReserve && doc.status === "draft" ? draftShortfalls(doc.id) : Promise.resolve([]),
+    ]);
+  const fullyReceived = doc.fulfilment === "received";
 
   const config = DOC_TYPES[type];
   const today = isoDate();
@@ -57,7 +80,7 @@ export async function DocumentDetailPage({
   const canWrite = canWriteSales(user.role);
   const title = documentTitle(doc);
   const label = typeLabel(type, doc.isReserve);
-  const actions = canWrite ? actionsFor(detail, today) : [];
+  const actions = canWrite ? actionsFor(detail, today, { shortfall: short, shipments: shipped.length }) : [];
 
   const mismatch =
     doc.xeroTotal !== null &&
@@ -74,7 +97,7 @@ export async function DocumentDetailPage({
       <PageHeader
         title={title}
         crumbs={[
-          { label: "Sales" },
+          { label: config.side === "supplier" ? "Purchasing" : "Sales" },
           { label: config.plural, href: config.base },
           { label: doc.number ?? "Draft" },
         ]}
@@ -94,8 +117,10 @@ export async function DocumentDetailPage({
             <Link href={`/customers/${doc.partnerId}`} className="font-medium text-[var(--text)] hover:underline underline-offset-2">
               {doc.partnerName}
             </Link>
-            <span className="tabular text-[15px] font-semibold text-[var(--text)]">{formatMoney(doc.total)}</span>
-            {type === "invoice" && doc.status !== "draft" && num(doc.amountPaid) > 0 ? (
+            {type === "goods_receipt" || type === "delivery" ? null : (
+              <span className="tabular text-[15px] font-semibold text-[var(--text)]">{formatMoney(doc.total)}</span>
+            )}
+            {hasPayments && doc.status !== "draft" && num(doc.amountPaid) > 0 ? (
               <span className="tabular">
                 {formatMoney(doc.amountPaid)} paid · {formatMoney(doc.amountDue)} due
               </span>
@@ -199,16 +224,72 @@ export async function DocumentDetailPage({
             <CardHeader
               title="Lines"
               meta={
-                type === "sales_order"
-                  ? "Ordered and allocated fill in once purchasing is in place"
-                  : undefined
+                reserve
+                  ? "Invoiced now; the goods go out on a delivery once they are here"
+                  : type === "goods_receipt"
+                    ? "Booked in"
+                    : type === "delivery"
+                      ? "Handed over"
+                      : undefined
               }
             />
-            <LinesView type={type} lines={lines} amountsAre={doc.amountsAre} />
-            <div className="flex justify-end border-t border-[var(--border-soft)] p-4">
-              <TotalsBox subtotal={doc.subtotal} tax={doc.taxTotal} total={doc.total} amountsAre={doc.amountsAre} />
-            </div>
+            <LinesView
+              type={type}
+              lines={lines}
+              amountsAre={doc.amountsAre}
+              isReserve={doc.isReserve}
+              tracking={Object.fromEntries(tracking)}
+              demand={demand}
+              today={today}
+            />
+            {type === "goods_receipt" || type === "delivery" ? null : (
+              <div className="flex justify-end border-t border-[var(--border-soft)] p-4">
+                <TotalsBox subtotal={doc.subtotal} tax={doc.taxTotal} total={doc.total} amountsAre={doc.amountsAre} />
+              </div>
+            )}
           </Card>
+
+          {isPo && doc.status !== "cancelled" ? (
+            <Card>
+              <CardHeader title="Shipments" meta="Couriers' tracking" />
+              <CardBody>
+                <ShipmentsPanel
+                  purchaseOrderId={doc.id}
+                  shipments={shipped.map(({ shipment, receiptNumber }) => ({ ...shipment, receiptNumber }))}
+                  received={fullyReceived}
+                  canWrite={canWrite}
+                  today={today}
+                />
+              </CardBody>
+            </Card>
+          ) : null}
+
+          {demandDoc &&
+          stockItems.length &&
+          (allocations.length || itemLines.some((l) => l.tracksStock && num(l.qtyDelivered) < num(l.quantity))) ? (
+            <Card>
+              <CardHeader title="Stock set aside" meta={reserve ? "For this invoice's goods" : "For this order"} />
+              <CardBody>
+                <AllocationsPanel
+                  canWrite={canWrite && !(reserve && Object.keys(demand).length > 0)}
+                  allocations={allocations}
+                  lines={itemLines
+                    .filter((l) => l.tracksStock && l.itemId && !demand[l.id])
+                    .map((l) => ({
+                      id: l.id,
+                      label: l.itemCode ?? l.description.split("\n")[0],
+                      need: Math.max(0, num(l.quantity) - num(l.qtyDelivered) - num(l.qtyAllocated)),
+                      available: Math.max(0, stock.get(l.itemId!)?.available ?? 0),
+                    }))}
+                />
+                {reserve && Object.keys(demand).length ? (
+                  <p className="mt-2 text-[12px] text-[var(--text-muted)]">
+                    Stock for this invoice is set aside on its sales order.
+                  </p>
+                ) : null}
+              </CardBody>
+            </Card>
+          ) : null}
         </div>
 
         <div className="flex flex-col gap-5">
@@ -241,8 +322,11 @@ export async function DocumentDetailPage({
               <CardHeader title="Xero" />
               <CardBody>
                 <p className="text-[13px] leading-6 text-[var(--text-muted)]">
-                  {label}s stay in The Gangway; Xero has no such document. Xero sees{" "}
-                  {doc.number ?? "it"} in the reference of the invoices and purchase orders drawn from it.
+                  {type === "goods_receipt"
+                    ? `Receipts stay in The Gangway; Xero has no such document. The purchase order in Xero has a note saying ${doc.number ?? "it"} was received.`
+                    : type === "delivery"
+                      ? `Deliveries stay in The Gangway; Xero has no such document. The invoice in Xero has a note saying ${doc.number ?? "it"} was delivered.`
+                      : `${label}s stay in The Gangway; Xero has no such document. Xero sees ${doc.number ?? "it"} in the reference of the invoices and purchase orders drawn from it.`}
                 </p>
               </CardBody>
             </Card>
@@ -275,6 +359,24 @@ export async function DocumentDetailPage({
                   <span>Still due</span>
                   <span className="tabular font-medium text-[var(--text)]">{formatMoney(doc.amountDue)}</span>
                 </p>
+              </CardBody>
+            </Card>
+          ) : null}
+
+          {isPo && doc.status !== "cancelled" ? (
+            <Card>
+              <CardHeader title="Bought for" />
+              <CardBody>
+                <LinkSalesPanel purchaseOrderId={doc.id} linked={links} suggestions={suggested} canWrite={canWrite} />
+              </CardBody>
+            </Card>
+          ) : null}
+
+          {type === "bill" && doc.status !== "cancelled" && !itemLines.some((l) => l.baseLineId) ? (
+            <Card>
+              <CardHeader title="Purchase order" />
+              <CardBody>
+                <LinkBillPanel billId={doc.id} options={poChoices} canWrite={canWrite} />
               </CardBody>
             </Card>
           ) : null}
@@ -320,6 +422,16 @@ function Note({ label, text }: { label: string; text: string }) {
   );
 }
 
+/** "Fast Couriers'", "Quokka's". */
+const possessive = (name: string) => (/s$/i.test(name.trim()) ? `${name.trim()}'` : `${name.trim()}'s`);
+
+const RELATION: Record<RelatedDoc["relation"], string> = {
+  base: "From",
+  child: "Drawn into",
+  ordered: "Ordered on",
+  for: "Bought for",
+};
+
 function RelatedList({ items }: { items: RelatedDoc[] }) {
   if (items.length === 0) {
     return <p className="text-[13px] text-[var(--text-muted)]">Nothing drawn from this, and it wasn&apos;t drawn from anything.</p>;
@@ -334,13 +446,15 @@ function RelatedList({ items }: { items: RelatedDoc[] }) {
             <Link href={docHref(d)} className="flex items-center justify-between gap-2 py-2 hover:underline underline-offset-2">
               <span className="min-w-0">
                 <span className="block text-[11px] text-[var(--text-faint)]">
-                  {d.relation === "base" ? "From" : "Drawn into"} · {typeLabel(d.type, d.isReserve)}
+                  {RELATION[d.relation]} · {typeLabel(d.type, d.isReserve)}
                 </span>
                 <span className="block truncate text-[13px] font-medium text-[var(--text)]">{documentTitle(d)}</span>
               </span>
               <span className="flex shrink-0 flex-col items-end gap-0.5">
                 <Badge tone={status.tone}>{status.label}</Badge>
-                <span className="tabular text-[12px] text-[var(--text-muted)]">{formatMoney(d.total)}</span>
+                {d.type === "goods_receipt" || d.type === "delivery" ? null : (
+                  <span className="tabular text-[12px] text-[var(--text-muted)]">{formatMoney(d.total)}</span>
+                )}
               </span>
             </Link>
           </li>
@@ -351,7 +465,11 @@ function RelatedList({ items }: { items: RelatedDoc[] }) {
 }
 
 /** The buttons a document offers, by type and state. One is primary at most. */
-function actionsFor({ doc, lines }: Detail, today: string): DocAction[] {
+function actionsFor(
+  { doc, lines }: Detail,
+  today: string,
+  extra: { shortfall: { label: string; quantity: number; allocated: number }[]; shipments: number },
+): DocAction[] {
   const config = DOC_TYPES[doc.type];
   const edit: DocAction = { kind: "link", label: "Edit", href: `${docHref(doc)}/edit` };
   const duplicate: DocAction = { kind: "run", id: "duplicate", label: "Duplicate" };
@@ -417,10 +535,22 @@ function actionsFor({ doc, lines }: Detail, today: string): DocAction[] {
         return [{ kind: "run", id: "confirm", label: "Confirm order", primary: true }, edit, duplicate, del];
       }
       const toInvoice = items.some((l) => num(l.qtyInvoiced) < num(l.quantity));
+      const toOrder = items.some((l) => lineState(l) === "to_order");
+      const out: DocAction[] = [];
+      if (toOrder) {
+        out.push({ kind: "link", label: "Raise purchase orders", href: `/purchasing/orders/raise?from=${doc.id}`, primary: true });
+      }
+      if (toInvoice) {
+        out.push({ kind: "link", label: "Invoice", href: `/sales/invoices/new?from=${doc.id}`, primary: !toOrder });
+        if (items.some((l) => l.tracksStock)) {
+          out.push({ kind: "link", label: "Reserve invoice", href: `/sales/invoices/new?from=${doc.id}&reserve=1` });
+        }
+      }
+      if (!toOrder && items.some((l) => l.tracksStock)) {
+        out.push({ kind: "link", label: "Raise purchase orders", href: `/purchasing/orders/raise?from=${doc.id}` });
+      }
       return [
-        ...(toInvoice
-          ? [{ kind: "link", label: "Invoice", href: `/sales/invoices/new?from=${doc.id}`, primary: true } as DocAction]
-          : []),
+        ...out,
         edit,
         duplicate,
         {
@@ -441,24 +571,63 @@ function actionsFor({ doc, lines }: Detail, today: string): DocAction[] {
 
     case "invoice": {
       if (doc.status === "cancelled") return [duplicate];
+      const stockLines = items.filter((l) => l.tracksStock);
       if (doc.status === "draft") {
         const due = doc.dueDate ? ` due ${formatDate(doc.dueDate, "day")}` : "";
-        return [
-          {
-            kind: "run",
-            id: "approve",
-            label: "Approve",
-            primary: true,
-            confirm: `Approve ${documentTitle(doc)} for ${doc.partnerName}, ${formatMoney(doc.total)}${
-              doc.amountsAre === "no_tax" ? "" : " inc GST"
-            },${due}? Its lines are locked once approved. Send it from Xero.`,
-          },
+        const short = extra.shortfall[0];
+        const out: DocAction[] = [
+          short
+            ? {
+                kind: "run",
+                id: "approve_anyway",
+                label: "Approve",
+                confirmLabel: "Approve anyway",
+                primary: true,
+                confirm: `Only ${formatQty(short.allocated)} of ${formatQty(short.quantity)} ${short.label} allocated${
+                  extra.shortfall.length > 1 ? `, and ${extra.shortfall.length - 1} more line${extra.shortfall.length > 2 ? "s" : ""} short` : ""
+                }. Approve anyway, and count the goods as delivered with it? Or make it a reserve invoice and deliver later.`,
+              }
+            : {
+                kind: "run",
+                id: "approve",
+                label: "Approve",
+                primary: true,
+                confirm: `Approve ${documentTitle(doc)} for ${doc.partnerName}, ${formatMoney(doc.total)}${
+                  doc.amountsAre === "no_tax" ? "" : " inc GST"
+                },${due}? Its lines are locked once approved. Send it from Xero.`,
+              },
           edit,
-          duplicate,
-          del,
         ];
+        if (!doc.isReserve && stockLines.length) {
+          out.push({ kind: "run", id: "goods_to_follow", label: "Make it a reserve invoice" });
+        }
+        out.push(duplicate, del);
+        return out;
       }
-      const out: DocAction[] = [edit, duplicate];
+      const out: DocAction[] = [];
+      if (doc.isReserve) {
+        const left = stockLines.some((l) => num(l.qtyDelivered) < num(l.quantity));
+        // The next step once the goods are here and set aside for it.
+        const ready = Boolean(doc.salesOrderId) || stockLines.some((l) => num(l.qtyAllocated) > 0);
+        if (left) out.push({ kind: "link", label: "Deliver", href: `/sales/deliveries/new?from=${doc.id}`, primary: ready });
+        const untouched = stockLines.every((l) => num(l.qtyDelivered) === 0 && num(l.qtyOrdered) === 0 && num(l.qtyAllocated) === 0);
+        if (untouched) {
+          out.push({
+            kind: "run",
+            id: "goods_with_invoice",
+            label: "Goods went with the invoice",
+            confirm: `Make ${documentTitle(doc)} a normal invoice again? Its goods count as delivered with it.`,
+          });
+        }
+      } else if (stockLines.length) {
+        out.push({
+          kind: "run",
+          id: "goods_to_follow",
+          label: "Goods to follow",
+          confirm: `Mark ${documentTitle(doc)} goods to follow? It stays as it is in Xero; the goods go out on a delivery from here once they arrive.`,
+        });
+      }
+      out.push(edit, duplicate);
       if (num(doc.amountPaid) === 0) {
         out.push({
           kind: "run",
@@ -470,6 +639,105 @@ function actionsFor({ doc, lines }: Detail, today: string): DocAction[] {
       }
       return out;
     }
+
+    case "purchase_order": {
+      if (doc.status === "cancelled") return [duplicate];
+      if (doc.status === "closed") {
+        return doc.closedBy === "person" ? [{ kind: "run", id: "reopen", label: "Reopen" }, duplicate] : [duplicate];
+      }
+      if (doc.status === "draft") {
+        return [
+          {
+            kind: "run",
+            id: "approve",
+            label: "Approve",
+            primary: true,
+            confirm: `Approve ${documentTitle(doc)} to ${doc.partnerName}, ${formatMoney(doc.total)}${
+              doc.amountsAre === "no_tax" ? "" : " inc GST"
+            }? Send it from Xero once it is approved.`,
+          },
+          edit,
+          duplicate,
+          del,
+        ];
+      }
+      const goods = items.some((l) => l.tracksStock) ? items.filter((l) => l.tracksStock) : items;
+      const toReceive = goods.some((l) => num(l.qtyReceived) < num(l.quantity));
+      const toBill = doc.xeroStatus !== "BILLED" && items.some((l) => num(l.qtyBilled) < num(l.quantity));
+      const out: DocAction[] = [];
+      if (toReceive) out.push({ kind: "link", label: "Receive", href: `/purchasing/receipts/new?from=${doc.id}`, primary: true });
+      if (toBill) out.push({ kind: "link", label: "Enter bill", href: `/purchasing/bills/new?from=${doc.id}`, primary: !toReceive });
+      out.push(edit, duplicate, {
+        kind: "run",
+        id: "close",
+        label: "Close",
+        confirm: `Close ${documentTitle(doc)} by hand? Nothing more is expected against it. Xero's PO is left as it is, with a note.`,
+      });
+      if (!items.some((l) => num(l.qtyReceived) > 0 || num(l.qtyBilled) > 0) && extra.shipments === 0) {
+        out.push({
+          kind: "run",
+          id: "cancel",
+          label: "Cancel order",
+          danger: true,
+          confirm: `Cancel ${documentTitle(doc)}? It is deleted in Xero too, and the lines it was ordered for go back to "To order".`,
+        });
+      }
+      return out;
+    }
+
+    case "bill": {
+      if (doc.status === "cancelled") return [];
+      if (doc.status === "draft") {
+        return [
+          {
+            kind: "run",
+            id: "approve",
+            label: "Approve",
+            primary: true,
+            confirm: `Approve ${possessive(doc.partnerName)} invoice ${doc.number ?? ""} for ${formatMoney(doc.total)}? Pay it in Xero.`,
+          },
+          edit,
+          del,
+        ];
+      }
+      const out: DocAction[] = [edit];
+      if (num(doc.amountPaid) === 0) {
+        out.push({
+          kind: "run",
+          id: "cancel",
+          label: "Void",
+          danger: true,
+          confirm: `Void this bill? It is voided in Xero too, and its lines go back to the purchase order as unbilled.`,
+        });
+      }
+      return out;
+    }
+
+    case "goods_receipt":
+      return doc.status === "open"
+        ? [
+            {
+              kind: "run",
+              id: "cancel",
+              label: "Cancel receipt",
+              danger: true,
+              confirm: `Cancel ${documentTitle(doc)}? Its goods come off the order as not received, and the stock it allocated is released.`,
+            },
+          ]
+        : [];
+
+    case "delivery":
+      return doc.status === "open"
+        ? [
+            {
+              kind: "run",
+              id: "cancel",
+              label: "Cancel delivery",
+              danger: true,
+              confirm: `Cancel ${documentTitle(doc)}? The goods count as still here and set aside for the invoice.`,
+            },
+          ]
+        : [];
 
     default:
       return [];

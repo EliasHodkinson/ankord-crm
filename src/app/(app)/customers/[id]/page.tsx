@@ -30,6 +30,7 @@ import { AccountRegister } from "@/components/app/account-register";
 import { CustomerForm } from "../customer-form";
 import { DocumentSummary } from "@/components/app/documents/document-summary";
 import { documentsForPartner } from "@/lib/data/documents";
+import { DOC_TYPES } from "@/lib/sales/doc-types";
 import { canWriteSales } from "@/lib/auth/session";
 import { getCustomer } from "@/lib/data/customers";
 import { listCommunications } from "@/lib/data/communications";
@@ -70,7 +71,7 @@ export default async function CustomerPage({
   // grant shares, and the link picker searches every Xero contact.
   const { restricted } = await getAccess();
 
-  const [entries, team, settings, folder, xero, xeroConn, salesDocs] = await Promise.all([
+  const [entries, team, settings, folder, xero, xeroConn, partnerDocs] = await Promise.all([
     listCommunications({ customerId: id }),
     listTeam(),
     getSettings(),
@@ -80,6 +81,8 @@ export default async function CustomerPage({
     documentsForPartner(id),
   ]);
   const xeroLive = Boolean(xeroConn);
+  const salesDocs = partnerDocs.filter((d) => DOC_TYPES[d.type].side === "customer");
+  const purchaseDocs = partnerDocs.filter((d) => DOC_TYPES[d.type].side === "supplier");
 
   const address = [
     customer.addressLine1,
@@ -164,6 +167,9 @@ export default async function CustomerPage({
             { id: "projects", label: "Projects", count: customer.projects.length },
             ...(customer.isCustomer || salesDocs.length
               ? [{ id: "sales", label: "Sales", count: salesDocs.length }]
+              : []),
+            ...(customer.isSupplier || purchaseDocs.length
+              ? [{ id: "purchasing", label: "Purchasing", count: purchaseDocs.length }]
               : []),
             { id: "people", label: "People", count: customer.contacts.length },
             { id: "history", label: "History", count: entries.length },
@@ -255,6 +261,18 @@ export default async function CustomerPage({
               newHref={`partner=${customer.id}`}
               canWrite={canWriteSales(user.role) && customer.isCustomer}
               emptyText="Quotes, sales orders and invoices for this business partner appear here. Quotes and invoices are numbered and sent by Xero."
+            />
+          ) : null}
+
+          {customer.isSupplier || purchaseDocs.length ? (
+            <DocumentSummary
+              id="purchasing"
+              title="Purchasing"
+              side="supplier"
+              documents={purchaseDocs}
+              newHref={`partner=${customer.id}`}
+              canWrite={canWriteSales(user.role) && customer.isSupplier}
+              emptyText="Purchase orders, receipts and bills with this supplier appear here. Purchase orders are numbered and sent by Xero."
             />
           ) : null}
 

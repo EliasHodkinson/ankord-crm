@@ -10,7 +10,7 @@ export function ImportTabs() {
       views={[
         { value: "contacts", label: "1 · Contacts", icon: Users },
         { value: "items", label: "2 · Items", icon: Tags },
-        { value: "documents", label: "3 · Quotes & invoices", icon: FileText },
+        { value: "documents", label: "3 · Documents", icon: FileText },
       ]}
       param="tab"
       defaultView="contacts"

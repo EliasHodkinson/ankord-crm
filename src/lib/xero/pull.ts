@@ -2,7 +2,7 @@ import "server-only";
 import { and, eq, inArray, isNotNull, ne } from "drizzle-orm";
 import { getDb, withTransaction } from "@/lib/db";
 import { documents, settings, type Document } from "@/lib/db/schema";
-import { baseLinesOf, recomputeCounters } from "@/lib/actions/documents-core";
+import { baseLinesOf, recomputeCounters, recomputeFulfilment } from "@/lib/actions/documents-core";
 import { toCents } from "@/lib/sales/money";
 import { parseXeroDate, xeroSend } from "./client";
 import { mapPayments, type RawPayment } from "./import/map";
@@ -130,8 +130,44 @@ export async function applyInvoice(doc: Document, x: XeroInvoice): Promise<boole
   return moneyChanged;
 }
 
+export type XeroPurchaseOrder = {
+  PurchaseOrderID: string;
+  PurchaseOrderNumber?: string;
+  Status?: string;
+  Total?: number;
+  UpdatedDateUTC?: string;
+};
+
+/**
+ * Applies one PO's Xero state: approved there opens it here; BILLED there
+ * counts as billed, so a received PO closes; deleted there while live here is
+ * flagged for a person. Returns true if its status moved.
+ */
+export async function applyPurchaseOrder(doc: Document, x: XeroPurchaseOrder): Promise<boolean> {
+  const status = x.Status ?? doc.xeroStatus ?? "DRAFT";
+  const patch: Partial<Document> = {
+    xeroStatus: status,
+    xeroUpdatedAt: parseXeroDate(x.UpdatedDateUTC),
+    xeroTotal: x.Total !== undefined ? String(x.Total) : doc.xeroTotal,
+    number: doc.number ?? x.PurchaseOrderNumber ?? null,
+  };
+  if (status === "DELETED" && doc.status !== "cancelled") {
+    patch.xeroSyncState = "failed";
+    patch.xeroError = "Deleted in Xero but still live here. Cancel the purchase order here too, or re-push it.";
+  } else if (doc.status === "draft" && (status === "AUTHORISED" || status === "BILLED")) {
+    patch.status = "open";
+    patch.issuedAt = doc.issuedAt ?? new Date();
+  }
+  await withTransaction(async (tx) => {
+    await tx.update(documents).set(patch).where(eq(documents.id, doc.id));
+    // BILLED may complete it; recomputing is harmless when it does not.
+    if (status !== doc.xeroStatus) await recomputeFulfilment(tx, doc.id);
+  });
+  return patch.status !== undefined || status !== doc.xeroStatus;
+}
+
 /** Linked documents that are still worth watching. */
-async function linked(type: "quote" | "invoice", ids?: string[]) {
+async function linked(type: "quote" | "invoice" | "purchase_order" | "bill", ids?: string[]) {
   return getDb()
     .select()
     .from(documents)
@@ -153,7 +189,8 @@ async function linked(type: "quote" | "invoice", ids?: string[]) {
 export async function pullDocuments(options: { ids?: string[]; since?: Date | null } = {}) {
   let changed = 0;
 
-  const invoiceDocs = await linked("invoice", options.ids);
+  // Bills are ACCPAY invoices: the same resource, the same money rules.
+  const invoiceDocs = [...(await linked("invoice", options.ids)), ...(await linked("bill", options.ids))];
   for (let i = 0; i < invoiceDocs.length; i += 40) {
     const batch = invoiceDocs.slice(i, i + 40);
     const data = await xeroSend<{ Invoices?: XeroInvoice[] }>(
@@ -188,7 +225,27 @@ export async function pullDocuments(options: { ids?: string[]; since?: Date | nu
     }
   }
 
-  return { changed, invoices: invoiceDocs.length, quotes: quoteDocs.length };
+  const orderDocs = await linked("purchase_order", options.ids);
+  if (orderDocs.length) {
+    const byDoc = new Map(orderDocs.map((d) => [d.xeroId!, d]));
+    if (!options.ids && options.since) {
+      const data = await xeroSend<{ PurchaseOrders?: XeroPurchaseOrder[] }>("GET", "/PurchaseOrders?page=1", undefined, {
+        headers: { "if-modified-since": options.since.toUTCString() },
+      });
+      for (const x of data.PurchaseOrders ?? []) {
+        const doc = byDoc.get(x.PurchaseOrderID);
+        if (doc && (await applyPurchaseOrder(doc, x))) changed += 1;
+      }
+    } else {
+      for (const doc of orderDocs.slice(0, 20)) {
+        const data = await xeroSend<{ PurchaseOrders?: XeroPurchaseOrder[] }>("GET", `/PurchaseOrders/${doc.xeroId}`);
+        const x = data.PurchaseOrders?.[0];
+        if (x && (await applyPurchaseOrder(doc, x))) changed += 1;
+      }
+    }
+  }
+
+  return { changed, invoices: invoiceDocs.length, quotes: quoteDocs.length, purchaseOrders: orderDocs.length };
 }
 
 /** The scheduled pull: everything changed since the last one. */

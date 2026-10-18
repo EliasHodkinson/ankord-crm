@@ -1198,7 +1198,11 @@ export const documentLines = pgTable(
   ],
 );
 
-/** Stock set aside for a sales-order line. Used from phase B. */
+/**
+ * Stock set aside for a line still to be delivered: a sales-order line, or a
+ * reserve-invoice line with no order behind it (an invoice raised and paid
+ * before the goods were bought). The column keeps its phase A name.
+ */
 export const stockAllocations = pgTable(
   "stock_allocations",
   {
@@ -1239,6 +1243,35 @@ export const stockAdjustments = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("stock_adjustments_item_idx").on(t.itemId)],
+);
+
+/**
+ * A supplier's dispatch against a purchase order: carrier, tracking number and
+ * dates, so "shipped, in transit" shows on the PO and on the sales documents
+ * it was raised for. A PO may have several (partial shipments). In transit
+ * until a goods receipt closes it, or the PO is fully received.
+ */
+export const shipments = pgTable(
+  "shipments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    /** A key from lib/sales/carriers.ts; "other" when the URL is typed. */
+    carrier: text("carrier").notNull(),
+    trackingNumber: text("tracking_number"),
+    /** Built from the carrier and number, or typed for an unlisted carrier. */
+    trackingUrl: text("tracking_url"),
+    shippedOn: date("shipped_on"),
+    eta: date("eta"),
+    notes: text("notes"),
+    /** The goods receipt that recorded this shipment arriving. */
+    receiptId: uuid("receipt_id").references(() => documents.id, { onDelete: "set null" }),
+    createdById: uuid("created_by_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("shipments_document_idx").on(t.documentId, t.createdAt)],
 );
 
 /** Numbering for the documents Xero never sees: SO-, GR-, DN-. */
@@ -1468,6 +1501,7 @@ export type PlannerItem = typeof plannerItems.$inferSelect;
 export type Item = typeof items.$inferSelect;
 export type Document = typeof documents.$inferSelect;
 export type DocumentLine = typeof documentLines.$inferSelect;
+export type Shipment = typeof shipments.$inferSelect;
 export type DocumentType = (typeof documentTypeEnum.enumValues)[number];
 export type DocumentStatus = (typeof documentStatusEnum.enumValues)[number];
 export type RowType = (typeof rowTypeEnum.enumValues)[number];

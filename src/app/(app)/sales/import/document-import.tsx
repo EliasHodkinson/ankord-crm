@@ -24,6 +24,21 @@ const IMPORTABLE = new Set(["create", "update", "refresh"]);
  * import the ticked ones. The scope lives in the URL so the preview is a page
  * read like any other; the import itself is one action over the ticked IDs.
  */
+const SOURCE_LABEL: Record<ImportSourceKey, string> = {
+  quotes: "quotes",
+  invoices: "invoices",
+  purchase_orders: "purchase orders",
+  bills: "bills",
+};
+
+const PLACEHOLDER: Record<ImportSourceKey, string> = {
+  quotes: "QU-0012, QU-0015",
+  invoices: "INV-0028, INV-0031",
+  purchase_orders: "PO-0011, PO-0012",
+  // A bill is found by the supplier's number, or by the PO in its reference.
+  bills: "PO-0011 or the supplier's invoice number",
+};
+
 export function DocumentImport({
   source,
   scope,
@@ -83,7 +98,7 @@ export function DocumentImport({
   const go = (next: URLSearchParams) => startNav(() => router.replace(`${pathname}?${next}`, { scroll: false }));
 
   const chosen = importable.filter((r) => ticked.has(r.xeroId));
-  const label = source === "quotes" ? "quotes" : "invoices";
+  const label = SOURCE_LABEL[source];
   const waiting = rows.filter((r) => r.plan === "waiting");
 
   return (
@@ -110,6 +125,8 @@ export function DocumentImport({
           >
             <option value="quotes">Quotes</option>
             <option value="invoices">Invoices</option>
+            <option value="purchase_orders">Purchase orders</option>
+            <option value="bills">Bills</option>
           </Select>
         </label>
         <label className="flex flex-col gap-1 text-[12px] font-medium text-[var(--text-muted)]">
@@ -138,7 +155,7 @@ export function DocumentImport({
             <Input
               value={numbers}
               onChange={(e) => setNumbers(e.target.value)}
-              placeholder={source === "quotes" ? "QU-0012, QU-0015" : "INV-0028, INV-0031"}
+              placeholder={PLACEHOLDER[source]}
               required
               className="h-8 text-[13px]"
             />
@@ -217,7 +234,7 @@ export function DocumentImport({
                 <Th>Date</Th>
                 <Th>In Xero</Th>
                 <Th numeric>Total</Th>
-                {source === "invoices" ? <Th numeric>Due</Th> : null}
+                {source === "invoices" || source === "bills" ? <Th numeric>Due</Th> : null}
                 <Th>Import</Th>
               </tr>
             </thead>
@@ -270,7 +287,7 @@ export function DocumentImport({
                         <span className="block text-[11px] text-[var(--warn)]">Xero: {formatMoney(row.xeroTotal)}</span>
                       ) : null}
                     </Td>
-                    {source === "invoices" ? (
+                    {source === "invoices" || source === "bills" ? (
                       <Td numeric className={num(row.amountDue) === 0 ? "text-[var(--text-faint)]" : undefined}>
                         {formatMoney(row.amountDue)}
                       </Td>

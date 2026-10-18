@@ -12,7 +12,10 @@ import {
   Gauge,
   Mail,
   Package,
+  PackageCheck,
   ReceiptText,
+  ShoppingCart,
+  Truck,
   Tags,
   Settings,
   Target,
@@ -42,8 +45,17 @@ const SECTIONS: { heading?: string; items: NavItem[] }[] = [
       { href: "/sales/quotes", label: "Quotes", icon: FileText },
       { href: "/sales/orders", label: "Sales orders", icon: Package, badge: "toOrder" },
       { href: "/sales/invoices", label: "Invoices", icon: ReceiptText, badge: "overdue" },
+      { href: "/sales/deliveries", label: "Deliveries", icon: Truck },
       { href: "/sales/items", label: "Items", icon: Tags, staffOnly: true },
       { href: "/sales/import", label: "Import from Xero", icon: CloudDownload, staffOnly: true },
+    ],
+  },
+  {
+    heading: "Purchasing",
+    items: [
+      { href: "/purchasing/orders", label: "Purchase orders", icon: ShoppingCart, badge: "inTransit" },
+      { href: "/purchasing/receipts", label: "Receipts", icon: PackageCheck },
+      { href: "/purchasing/bills", label: "Bills", icon: ReceiptText },
     ],
   },
   {
@@ -58,7 +70,7 @@ const SECTIONS: { heading?: string; items: NavItem[] }[] = [
 ];
 
 /** Live numbers for the rail: follow-ups due, orders needing stock, invoices overdue. */
-export type NavCounts = { due?: number; toOrder?: number; overdue?: number };
+export type NavCounts = { due?: number; toOrder?: number; overdue?: number; inTransit?: number };
 
 type NavItem = {
   href: string;

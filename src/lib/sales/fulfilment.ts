@@ -58,3 +58,26 @@ export function reserveFulfilment(
   if (stock.length === 0) return null;
   return stock.every((l) => num(l.qtyDelivered) >= num(l.quantity)) ? "delivered" : "to_deliver";
 }
+
+export type ReserveLineState = "to_order" | "on_order" | "ready" | "delivered";
+
+/**
+ * Where a stock line of a reserve invoice stands: the customer has been
+ * invoiced, the goods follow. Same ladder as a sales-order line, ending at
+ * delivered. Its ordered and allocated figures are the sales-order line's
+ * when the invoice was drawn from one, else the invoice line's own (a PO
+ * raised straight against an invoice).
+ */
+export function reserveLineState(line: {
+  quantity: string | number;
+  qtyOrdered: string | number;
+  qtyAllocated: string | number;
+  qtyDelivered: string | number;
+}): ReserveLineState {
+  const needed = num(line.quantity) - num(line.qtyDelivered);
+  if (needed <= 0) return "delivered";
+  const allocated = num(line.qtyAllocated);
+  if (allocated >= needed) return "ready";
+  if (num(line.qtyOrdered) + allocated >= needed) return "on_order";
+  return "to_order";
+}

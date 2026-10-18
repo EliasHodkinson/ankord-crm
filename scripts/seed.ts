@@ -26,6 +26,7 @@ const {
   documentLines,
   documents,
   items,
+  shipments,
   leads,
   numberSeries,
   projectAccounts,
@@ -820,6 +821,76 @@ async function main() {
       { documentId: order.id, position: 0, itemId: banner.id, itemCode: banner.code, unit: banner.unit, tracksStock: true, description: banner.description!, quantity: "3", unitPrice: "295", taxType: "OUTPUT", taxRate: "10", lineAmount: "885.00", taxAmount: "88.50" },
       { documentId: order.id, position: 1, itemId: design.id, itemCode: design.code, unit: design.unit, description: "Banner artwork", quantity: "1", unitPrice: "130", taxType: "OUTPUT", taxRate: "10", lineAmount: "130.00", taxAmount: "13.00" },
     ]);
+
+    // Purchasing: a supplier, and a draft PO raised for the order's banners
+    // (sourceLineId), with a courier shipment on its way. The PO stays
+    // `pending` — Xero numbers it once a demo organisation is connected.
+    const [inkwell] = await db
+      .insert(customers)
+      .values({
+        name: "Inkwell Print Co",
+        status: "active",
+        industry: "Printing",
+        isCustomer: false,
+        isSupplier: true,
+        supplierTermsDays: 30,
+        ownerId: owner,
+      })
+      .returning({ id: customers.id });
+    await db.update(items).set({ preferredSupplierId: inkwell.id, purchasePrice: "140" }).where(eq(items.id, banner.id));
+    const bannerLine = await db
+      .select({ id: documentLines.id })
+      .from(documentLines)
+      .where(eq(documentLines.documentId, order.id))
+      .orderBy(asc(documentLines.position))
+      .limit(1);
+    const [po] = await db
+      .insert(documents)
+      .values({
+        type: "purchase_order",
+        status: "draft",
+        partnerId: inkwell.id,
+        partnerName: "Inkwell Print Co",
+        reference: `${series ? `${series.prefix}${String(series.value).padStart(series.padTo, "0")}` : "SO"} · Parkside Physio`,
+        docDate: today,
+        dueDate: iso(daysAhead(7)),
+        ownerId: owner,
+        salesOrderId: order.id,
+        subtotal: "420.00",
+        taxTotal: "42.00",
+        total: "462.00",
+        fulfilment: "to_receive",
+        xeroSyncState: "pending",
+        createdById: owner,
+      })
+      .returning({ id: documents.id });
+    await db.insert(documentLines).values({
+      documentId: po.id,
+      position: 0,
+      itemId: banner.id,
+      itemCode: banner.code,
+      unit: banner.unit,
+      tracksStock: true,
+      description: banner.description!,
+      quantity: "3",
+      unitPrice: "140",
+      taxType: "INPUT",
+      taxRate: "10",
+      lineAmount: "420.00",
+      taxAmount: "42.00",
+      sourceLineId: bannerLine[0]?.id ?? null,
+    });
+    await db.update(documentLines).set({ qtyOrdered: "3" }).where(eq(documentLines.id, bannerLine[0].id));
+    await db.update(documents).set({ fulfilment: "on_order" }).where(eq(documents.id, order.id));
+    await db.insert(shipments).values({
+      documentId: po.id,
+      carrier: "startrack",
+      trackingNumber: "INK0000123",
+      trackingUrl: "https://startrack.com.au/track/details/INK0000123",
+      shippedOn: today,
+      eta: iso(daysAhead(3)),
+      createdById: owner,
+    });
 
     // A couple of saved views so the feature is discoverable rather than empty.
     await db.insert(savedViews).values([

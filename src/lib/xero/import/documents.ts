@@ -3,8 +3,10 @@ import { eq, inArray, sql } from "drizzle-orm";
 import { getDb, withTransaction, type Tx } from "@/lib/db";
 import { customers, documentLines, documents, items, settings, type Document } from "@/lib/db/schema";
 import { logActivity } from "@/lib/actions/shared";
+import { baseLinesOf, recomputeCounters, recomputeFulfilment } from "@/lib/actions/documents-core";
 import { typeLabel } from "@/lib/sales/doc-types";
-import { applyInvoice, applyQuote } from "../pull";
+import { applyInvoice, applyPurchaseOrder, applyQuote } from "../pull";
+import { linkBillByReference } from "@/lib/purchasing/link";
 import { replacePayments } from "../payments";
 import { totalsAgree, type ImportedDoc } from "./map";
 import { IMPORT_SOURCES } from "./sources";
@@ -77,7 +79,10 @@ async function partnersByContact(contactIds: string[]) {
 function planFor(doc: ImportedDoc, partner: { id: string } | undefined, existing: Existing | undefined): { plan: DocPlan; note: string | null } {
   if (existing) {
     if (isPristineImport(existing)) return { plan: "update", note: null };
-    const what = doc.type === "quote" ? "its Xero status is" : "its Xero status, amounts and payments are";
+    const what =
+      doc.type === "quote" || doc.type === "purchase_order"
+        ? "its Xero status is"
+        : "its Xero status, amounts and payments are";
     return {
       plan: "refresh",
       note: existing.importedAt
@@ -171,6 +176,8 @@ function headerFrom(doc: ImportedDoc, partner: { id: string; name: string }, ctx
   const closed = doc.state.status === "closed";
   return {
     number: doc.number,
+    // A bill's number is the supplier's; it is unique per supplier, not overall.
+    supplierInvoiceNumber: doc.type === "bill" ? doc.number : null,
     status: doc.state.status,
     quoteOutcome: doc.type === "quote" ? doc.state.quoteOutcome : null,
     partnerId: partner.id,
@@ -183,6 +190,9 @@ function headerFrom(doc: ImportedDoc, partner: { id: string; name: string }, ctx
     title: doc.title,
     summary: doc.summary,
     terms: doc.terms,
+    ...(doc.type === "purchase_order"
+      ? { shipToText: doc.shipToText ?? null, contactName: doc.attentionTo ?? null, remarks: doc.remarks ?? null }
+      : {}),
     subtotal: doc.subtotal,
     taxTotal: doc.taxTotal,
     total: doc.total,
@@ -242,10 +252,16 @@ async function updateDoc(tx: Tx, id: string, doc: ImportedDoc, partner: { id: st
       xeroPushedVersion: sql`${documents.version} + 1`,
     })
     .where(eq(documents.id, id));
+  // A bill's lines may be entered against a PO; the PO's counters follow the
+  // replaced lines, and the link is made again from the Reference.
+  const before = await baseLinesOf(tx, [id]);
   await tx.delete(documentLines).where(eq(documentLines.documentId, id));
   const lines = lineRows(doc, ctx, id);
   if (lines.length) await tx.insert(documentLines).values(lines);
   await replacePayments(id, doc.payments, tx);
+  if (doc.type === "bill") await linkBillByReference(tx, id);
+  await recomputeCounters(tx, before);
+  if (doc.type === "purchase_order") await recomputeFulfilment(tx, id);
   return true;
 }
 
@@ -260,6 +276,8 @@ async function refreshDoc(id: string, doc: ImportedDoc) {
   };
   if (doc.type === "quote") {
     await applyQuote(current, { QuoteID: doc.xeroId, QuoteNumber: doc.number ?? undefined, ...common });
+  } else if (doc.type === "purchase_order") {
+    await applyPurchaseOrder(current, { PurchaseOrderID: doc.xeroId, PurchaseOrderNumber: doc.number ?? undefined, ...common });
   } else {
     await applyInvoice(current, {
       InvoiceID: doc.xeroId,
@@ -311,7 +329,15 @@ export async function importDocuments(
       if (plan === "waiting") report.waiting += 1;
       else if (plan === "currency") report.skipped += 1;
       else if (plan === "create" && partner) {
-        const id = await withTransaction((tx) => createDoc(tx, doc, partner, ctx));
+        const id = await withTransaction(async (tx) => {
+          const created = await createDoc(tx, doc, partner, ctx);
+          // A bill whose Reference names one of this supplier's POs here is
+          // entered against it, so the PO counts it as billed.
+          if (doc.type === "bill") await linkBillByReference(tx, created);
+          // A PO's "to receive" and auto-close come from its counters.
+          if (doc.type === "purchase_order") await recomputeFulfilment(tx, created);
+          return created;
+        });
         await logActivity({
           entityType: "document",
           entityId: id,
