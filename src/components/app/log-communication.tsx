@@ -6,7 +6,7 @@ import { ActionForm, SaveIndicator, SubmitButton } from "@/components/ui/form";
 import { SelectField, TextAreaField, TextField } from "@/components/app/form-kit";
 import { Button } from "@/components/ui/button";
 import { logCommunication } from "@/lib/actions/communications";
-import { isoDate } from "@/lib/utils";
+import { isoDate, toWallTime } from "@/lib/utils";
 
 /**
  * Inline logger — no modal. Collapsed it is one button; expanded it is the
@@ -78,7 +78,7 @@ export function LogCommunication({
             label="When"
             type="datetime-local"
             id={`${uid}-when`}
-            defaultValue={localNow()}
+            defaultValue={toWallTime()}
           />
         </div>
 
@@ -154,11 +154,4 @@ export function LogCommunication({
         </div>
     </ActionForm>
   );
-}
-
-/** `datetime-local` needs a local ISO string, not a UTC one. */
-function localNow(): string {
-  const now = new Date();
-  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-  return now.toISOString().slice(0, 16);
 }

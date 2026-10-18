@@ -26,25 +26,92 @@ export function money(value: string | number | null | undefined): string {
   return Number.isFinite(n) ? AUD.format(n) : "—";
 }
 
+/**
+ * Ankor'd works in Sydney time. The server runs in UTC, so anything that turns
+ * an instant into a wall-clock date or time — or a typed wall-clock time back
+ * into an instant — has to name the zone rather than trust the process.
+ */
+export const APP_TIME_ZONE = "Australia/Sydney";
+
+const wallParts = new Intl.DateTimeFormat("en-CA", {
+  timeZone: APP_TIME_ZONE,
+  hourCycle: "h23",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+});
+
+function wallClock(d: Date): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const part of wallParts.formatToParts(d)) {
+    if (part.type !== "literal") out[part.type] = Number(part.value);
+  }
+  return out;
+}
+
+/** How far Sydney is ahead of UTC at a given instant, in ms. */
+function zoneOffset(ms: number): number {
+  const p = wallClock(new Date(ms));
+  return Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second) - Math.floor(ms / 1000) * 1000;
+}
+
+const WALL_TIME = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/;
+
+/**
+ * A `datetime-local` value ("2026-10-18T17:00", no zone) read as Sydney time.
+ * Anything carrying its own zone is parsed as given; anything else is null.
+ */
+export function fromWallTime(value: string): Date | null {
+  const m = WALL_TIME.exec(value.trim());
+  if (!m) {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const guess = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] ?? 0));
+  let at = guess - zoneOffset(guess);
+  // Across a daylight-saving change the offset at the answer can differ.
+  const second = guess - zoneOffset(at);
+  if (second !== at) at = second;
+  return new Date(at);
+}
+
+/** An instant as a `datetime-local` value in Sydney time. */
+export function toWallTime(value: Date = new Date()): string {
+  const p = wallClock(value);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${p.year}-${pad(p.month)}-${pad(p.day)}T${pad(p.hour)}:${pad(p.minute)}`;
+}
+
 export function formatDate(
   value: Date | string | null | undefined,
   style: "short" | "long" | "day" = "short",
 ): string {
   if (!value) return "—";
-  const d = typeof value === "string" ? new Date(`${value}${value.length === 10 ? "T00:00:00" : ""}`) : value;
+  // A bare date is a calendar day, not an instant: midday UTC falls on that
+  // same day in Sydney.
+  const d = typeof value === "string" ? new Date(`${value}${value.length === 10 ? "T12:00:00Z" : ""}`) : value;
   if (Number.isNaN(d.getTime())) return "—";
   if (style === "day") {
-    return d.toLocaleDateString("en-AU", { day: "numeric", month: "short" });
+    return d.toLocaleDateString("en-AU", { timeZone: APP_TIME_ZONE, day: "numeric", month: "short" });
   }
   if (style === "long") {
     return d.toLocaleDateString("en-AU", {
+      timeZone: APP_TIME_ZONE,
       weekday: "short",
       day: "numeric",
       month: "long",
       year: "numeric",
     });
   }
-  return d.toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
+  return d.toLocaleDateString("en-AU", {
+    timeZone: APP_TIME_ZONE,
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 export function formatDateTime(value: Date | string | null | undefined): string {
@@ -52,6 +119,7 @@ export function formatDateTime(value: Date | string | null | undefined): string 
   const d = typeof value === "string" ? new Date(value) : value;
   if (Number.isNaN(d.getTime())) return "—";
   return `${formatDate(d)} · ${d.toLocaleTimeString("en-AU", {
+    timeZone: APP_TIME_ZONE,
     hour: "numeric",
     minute: "2-digit",
   })}`;
@@ -148,7 +216,7 @@ export function daysAway(
 
 /** "Morning" / "Afternoon" / "Evening" for the current local time. */
 export function timeOfDayGreeting(): string {
-  const hour = new Date().getHours();
+  const hour = wallClock(new Date()).hour;
   if (hour < 12) return "Morning";
   if (hour < 17) return "Afternoon";
   return "Evening";
@@ -170,12 +238,13 @@ export function daysBack(days: number): Date {
 
 /** Today as an ISO date string, and the same offset by `days`. */
 export function isoDate(offsetDays = 0): string {
-  return new Date(Date.now() + offsetDays * 86_400_000).toISOString().slice(0, 10);
+  return toWallTime(new Date(Date.now() + offsetDays * 86_400_000)).slice(0, 10);
 }
 
 /** Today's date written out in full, Australian style. */
 export function todayLongDate(): string {
   return new Date().toLocaleDateString("en-AU", {
+    timeZone: APP_TIME_ZONE,
     weekday: "long",
     day: "numeric",
     month: "long",

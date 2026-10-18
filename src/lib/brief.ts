@@ -18,6 +18,8 @@
  * shows it live instead.
  */
 
+import { APP_TIME_ZONE } from "./utils";
+
 export const BRIEF_FILE_NAME = "_Brief.md";
 
 /**
@@ -80,6 +82,7 @@ export type BriefInput = {
 };
 
 const DATE = new Intl.DateTimeFormat("en-AU", {
+  timeZone: APP_TIME_ZONE,
   day: "numeric",
   month: "long",
   year: "numeric",

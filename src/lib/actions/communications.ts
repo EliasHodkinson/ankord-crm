@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { fromWallTime } from "@/lib/utils";
 import { getDb } from "@/lib/db";
 import { communications, tasks } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth/session";
@@ -28,9 +29,11 @@ const logSchema = z.object({
   visibility: z.enum(["team", "private"]).default("team"),
   subject: optionalText,
   body: z.string().trim().min(1, "Write something worth remembering."),
+  // `datetime-local` sends wall-clock time with no zone; read it as Sydney time,
+  // not as the server's UTC.
   occurredAt: z.preprocess(
-    (v) => (v === undefined || v === null || v === "" ? new Date() : v),
-    z.coerce.date(),
+    (v) => (v === undefined || v === null || v === "" ? new Date() : typeof v === "string" ? fromWallTime(v) : v),
+    z.date({ message: "That date and time doesn't look right." }),
   ),
   /* Activity-based selling: log what happened, and say what happens next. */
   followUpTitle: optionalText,
