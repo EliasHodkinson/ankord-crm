@@ -196,9 +196,24 @@ someone (which signs them out everywhere and takes back the folder access the
 CRM gave them). Enforcement is on the server, in `src/lib/access.ts` — every
 read, action, search and file route goes through it.
 
-### Bringing in a VA (or anyone without an Ankor'd licence)
+### Bringing in a VA
 
-They come in as an **Entra B2B guest**. Type their own email, leave **Invite as
+**If they already have an account in the tenant** — Ankor'd's VA works from
+`va@ankord.com.au`, a licensed member account with access to the shared
+mailboxes they handle — add that address in People and access, choose
+Restricted and tick their partners. The CRM finds the account and invites
+nobody. Do this **before** they first sign in: a member who signs in without a
+row here becomes Staff and sees everything.
+
+If the VA is signed in with a licensed account, check what that account
+already reaches in SharePoint itself. If it is in the client site's Members or
+Visitors group, or the library is shared with "Everyone except external users",
+it can open every client folder in SharePoint whatever the CRM grants. The CRM
+only adds and removes direct permissions on the granted folders; it does not
+take away access given through the site.
+
+**If they have no account in the tenant**, they come in as an **Entra B2B
+guest**. Type their own email, leave **Invite as
 a guest** ticked, choose Restricted and their partners. The CRM invites them
 through Graph; Microsoft emails them (or untick that and send the link shown).
 They sign in with their own email and a one-time code or their own Microsoft
