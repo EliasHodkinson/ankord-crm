@@ -1,17 +1,8 @@
 "use client";
 
-import { useId, useState, useTransition } from "react";
-import {
-  AlertTriangle,
-  Check,
-  ChevronRight,
-  CircleDashed,
-  ExternalLink,
-  Loader2,
-  MinusCircle,
-  OctagonAlert,
-  Plus,
-} from "lucide-react";
+import { useEffect, useId, useRef, useState, useTransition } from "react";
+import { useSearchParams } from "next/navigation";
+import { AlertTriangle, ChevronRight, ExternalLink, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
@@ -23,20 +14,11 @@ import {
 } from "@/components/ui/form";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { RichText } from "./rich-text";
+import { StatusControl } from "./step-status";
 import { addStep, setStepStatus, updateStepDetail } from "@/lib/actions/projects";
 import type { ProjectRecord, ProjectStepRecord } from "@/lib/data/projects";
 import type { TeamMember } from "@/lib/data/common";
 import { cn, formatDate } from "@/lib/utils";
-
-const STATUS_ORDER = ["todo", "in_progress", "blocked", "done", "not_applicable"] as const;
-
-const STATUS_META = {
-  todo: { label: "To do", icon: CircleDashed, className: "text-[var(--text-faint)]" },
-  in_progress: { label: "In progress", icon: Loader2, className: "text-[var(--info)]" },
-  blocked: { label: "Blocked", icon: OctagonAlert, className: "text-[var(--danger)]" },
-  done: { label: "Done", icon: Check, className: "text-[var(--ok)]" },
-  not_applicable: { label: "N/A", icon: MinusCircle, className: "text-[var(--text-faint)]" },
-} as const;
 
 export function Runbook({
   project,
@@ -45,6 +27,9 @@ export function Runbook({
   project: ProjectRecord;
   team: TeamMember[];
 }) {
+  // Set by the board, calendar and timeline when you click a step there.
+  const focusId = useSearchParams().get("step");
+
   return (
     <div className="flex flex-col gap-6">
       {project.phases.map((phase) => {
@@ -74,7 +59,13 @@ export function Runbook({
 
             <ol className="flex flex-col gap-1.5">
               {steps.map((step) => (
-                <StepRow key={step.id} step={step} projectId={project.id} team={team} />
+                <StepRow
+                  key={step.id}
+                  step={step}
+                  projectId={project.id}
+                  team={team}
+                  focused={step.id === focusId}
+                />
               ))}
             </ol>
 
@@ -90,17 +81,37 @@ function StepRow({
   step,
   projectId,
   team,
+  focused = false,
 }: {
   step: ProjectStepRecord;
   projectId: string;
   team: TeamMember[];
+  focused?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(focused);
   const [pending, start] = useTransition();
   const uid = useId();
+  const ref = useRef<HTMLLIElement>(null);
+
+  /*
+   * Arriving from the board, calendar or timeline: open the step and bring it
+   * into view, rather than dropping the reader at the top of a 26-step
+   * runbook. Adjusted during render rather than in an effect — the same row
+   * stays mounted when `?step=` changes, so its initial state never re-runs.
+   */
+  const [wasFocused, setWasFocused] = useState(focused);
+  if (focused !== wasFocused) {
+    setWasFocused(focused);
+    if (focused) setOpen(true);
+  }
+
+  useEffect(() => {
+    if (focused) ref.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [focused]);
 
   return (
     <li
+      ref={ref}
       className={cn(
         "overflow-hidden rounded-lg border bg-[var(--surface)] transition-colors duration-150",
         step.status === "blocked"
@@ -108,6 +119,7 @@ function StepRow({
           : step.status === "done"
             ? "border-[var(--border-soft)]"
             : "border-[var(--border)]",
+        focused && "ring-2 ring-[var(--accent)] ring-offset-1 ring-offset-[var(--surface)]",
         pending && "opacity-70",
       )}
     >
@@ -267,55 +279,6 @@ function StepRow({
         </div>
       ) : null}
     </li>
-  );
-}
-
-function StatusControl({
-  status,
-  pending,
-  onChange,
-}: {
-  status: (typeof STATUS_ORDER)[number];
-  pending: boolean;
-  onChange: (next: string) => void;
-}) {
-  const meta = STATUS_META[status];
-  const Icon = meta.icon;
-
-  return (
-    <div className="relative mt-0.5 shrink-0">
-      <select
-        aria-label={`Status — currently ${meta.label}`}
-        value={status}
-        disabled={pending}
-        onChange={(e) => onChange(e.target.value)}
-        className="absolute inset-0 cursor-pointer opacity-0"
-      >
-        {STATUS_ORDER.map((value) => (
-          <option key={value} value={value}>
-            {STATUS_META[value].label}
-          </option>
-        ))}
-      </select>
-      <span
-        aria-hidden
-        className={cn(
-          "grid size-6 place-items-center rounded-full border transition-colors duration-150",
-          status === "done"
-            ? "border-[var(--ok)] bg-[var(--ok-bg)]"
-            : status === "blocked"
-              ? "border-[var(--danger)] bg-[var(--danger-bg)]"
-              : "border-[var(--border)] bg-[var(--surface)]",
-          meta.className,
-        )}
-      >
-        {pending ? (
-          <Loader2 className="size-3.5 animate-spin" />
-        ) : (
-          <Icon className={cn("size-3.5", status === "in_progress" && "animate-none")} />
-        )}
-      </span>
-    </div>
   );
 }
 
