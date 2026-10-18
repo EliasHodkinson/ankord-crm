@@ -134,6 +134,13 @@
       "when": 1792314636772,
       "tag": "0018_campaigns",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1792317921765,
+      "tag": "0019_restricted_sections",
+      "breakpoints": true
     }
   ]
 }

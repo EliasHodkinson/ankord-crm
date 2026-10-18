@@ -29,7 +29,7 @@ import {
   xeroSyncLog,
   type Document,
 } from "@/lib/db/schema";
-import { customerScope, getAccess, canSeeCustomer } from "@/lib/access";
+import { canSeeCustomer, canSeeDocumentOf, documentScope, getAccess } from "@/lib/access";
 import { buildCopyLines, basedOnRemark, type DraftLine } from "@/lib/sales/copy";
 import { copyCounter, type DocType } from "@/lib/sales/doc-types";
 import { isoDate } from "@/lib/utils";
@@ -58,7 +58,7 @@ export type DocumentFilters = {
 export async function listDocuments(type: DocType, filters: DocumentFilters, userId: string) {
   const access = await getAccess();
   const where: SQL[] = [eq(documents.type, type)];
-  const scope = customerScope(access, documents.partnerId);
+  const scope = documentScope(access);
   if (scope) where.push(scope);
 
   // Default view: what is still in play.
@@ -124,7 +124,7 @@ export async function getDocument(id: string) {
   const db = getDb();
   const [doc] = await db.select().from(documents).where(eq(documents.id, id));
   if (!doc) return null;
-  if (!(await canSeeCustomer(doc.partnerId))) return null;
+  if (!canSeeDocumentOf(await getAccess(), doc)) return null;
 
   const [lines, [partner], [owner], [project], [salesOrder]] = await Promise.all([
     db
@@ -482,7 +482,7 @@ export async function documentsForProject(projectId: string) {
   return getDb()
     .select()
     .from(documents)
-    .where(and(eq(documents.projectId, projectId), customerScope(access, documents.partnerId)))
+    .where(and(eq(documents.projectId, projectId), documentScope(access)))
     .orderBy(desc(documents.docDate))
     .limit(40);
 }
@@ -490,7 +490,7 @@ export async function documentsForProject(projectId: string) {
 /** Numbers for the rail: orders needing stock ordered, invoices overdue. */
 export async function salesCounts(): Promise<{ toOrder: number; overdue: number; inTransit: number }> {
   const access = await getAccess();
-  const scope = customerScope(access, documents.partnerId);
+  const scope = documentScope(access);
   const [row] = await getDb()
     .select({
       toOrder: sql<number>`count(*) filter (where ${documents.type} = 'sales_order' and ${documents.status} = 'open' and ${documents.fulfilment} = 'to_order')::int`,

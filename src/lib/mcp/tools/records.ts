@@ -4,7 +4,7 @@ import { and, ilike, or } from "drizzle-orm";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { getDb } from "@/lib/db";
 import { documents } from "@/lib/db/schema";
-import { customerScope, getAccess } from "@/lib/access";
+import { documentScope, getAccess } from "@/lib/access";
 import { requireUser } from "@/lib/auth/session";
 import { getCustomer } from "@/lib/data/customers";
 import { getProject, progressOf } from "@/lib/data/projects";
@@ -51,7 +51,7 @@ export async function findDocumentId(ref: string): Promise<string | null> {
     .where(
       and(
         or(ilike(documents.number, ref.trim()), ilike(documents.supplierInvoiceNumber, ref.trim())),
-        customerScope(access, documents.partnerId),
+        documentScope(access),
       ),
     )
     .limit(1);
@@ -64,7 +64,7 @@ export function registerRecordTools(server: McpServer) {
     {
       title: "Who am I",
       description:
-        "The person this connection acts as: name, email and role in The Gangway. Restricted people see only the business partners granted to them; viewers read but do not write sales documents.",
+        "The person this connection acts as: name, email and role in The Gangway. Restricted people see only the business partners granted to them, and only the sections of The Gangway switched on for them; viewers read but do not write sales documents.",
       inputSchema: z.object({}),
       annotations: READ,
     },
@@ -78,6 +78,7 @@ export function registerRecordTools(server: McpServer) {
           email: user.email,
           role: user.role,
           grantedBusinessPartners: access.restricted ? access.customerIds.length : "all",
+          sections: access.restricted ? access.sections : "all",
           appUrl: appUrl(),
           timeZone: "Australia/Sydney",
         };

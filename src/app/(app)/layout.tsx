@@ -12,6 +12,7 @@ import { dueCount } from "@/lib/data/tasks";
 import { salesCounts } from "@/lib/data/documents";
 import { isAuthConfigured, isDatabaseConfigured } from "@/lib/env";
 import { labelFor, USER_ROLE } from "@/components/ui/status";
+import { SECTIONS, sectionsFrom } from "@/lib/sections";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   if (!isAuthConfigured() || !isDatabaseConfigured()) redirect("/setup");
@@ -20,6 +21,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!session) redirect("/signin");
   const { user } = session;
   const restricted = user.role === "restricted";
+  const sections = restricted ? sectionsFrom(user.sections) : [...SECTIONS];
 
   // A number on the rail is the cheapest reminder there is.
   const [due, sales] = await Promise.all([
@@ -41,18 +43,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             CRM
           </span>
         </Link>
-        <Nav counts={counts} restricted={restricted} />
+        <Nav counts={counts} restricted={restricted} sections={sections} />
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Wraps to two rows on small screens so the search field stays usable */}
         <header className="sticky top-0 z-40 flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-[var(--border)] bg-[var(--surface)]/85 px-4 py-2.5 backdrop-blur-md md:h-14 md:flex-nowrap md:py-0">
-          <MobileNav counts={counts} restricted={restricted} />
+          <MobileNav counts={counts} restricted={restricted} sections={sections} />
           <Link href="/" className="lg:hidden">
             <AnkordLogo className="h-4 w-auto text-[var(--color-coastal-800)] dark:text-white" />
           </Link>
           <div className="order-last w-full md:order-none md:w-auto md:flex-1">
-            <CommandPalette restricted={restricted} />
+            <CommandPalette restricted={restricted} sections={sections} />
           </div>
           <div className="ml-auto flex items-center gap-2 md:ml-0">
             <div className="hidden sm:block">

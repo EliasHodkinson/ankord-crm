@@ -2,12 +2,16 @@ import "server-only";
 import { and, asc, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { contacts, customers, documents, projects, users } from "@/lib/db/schema";
-import { canSeeCustomer, customerScope, getAccess } from "@/lib/access";
+import { canSeeCustomer, customerScope, getAccess, hasSection, partnerScope } from "@/lib/access";
 import { PARTNER_TYPE_FIELD, type PartnerType } from "@/lib/contact-kinds";
 
-/** Null when it does not exist — or when this person may not see it. */
+/**
+ * Null when it does not exist — or when this person may not see it. Contacts
+ * and projects come back empty to someone whose section for them is off.
+ */
 export async function getCustomer(id: string) {
-  if (!(await canSeeCustomer(id))) return null;
+  const access = await getAccess();
+  if (!hasSection(access, "customers") || !(await canSeeCustomer(id))) return null;
   const customer = await getDb().query.customers.findFirst({
     where: eq(customers.id, id),
     with: {
@@ -32,7 +36,12 @@ export async function getCustomer(id: string) {
       accounts: { orderBy: (a, { asc: ord }) => [ord(a.position), ord(a.system)] },
     },
   });
-  return customer ?? null;
+  if (!customer) return null;
+  return {
+    ...customer,
+    contacts: hasSection(access, "contacts") ? customer.contacts : [],
+    projects: hasSection(access, "projects") ? customer.projects : [],
+  };
 }
 
 /** Business partners this person may pick from — project and email forms. */
@@ -101,7 +110,7 @@ const QUICK: Record<string, SQL> = {
 
 /** Everything but the type: the counts on the switch answer "and in the others?" */
 function baseFilters(access: Awaited<ReturnType<typeof getAccess>>, filter: PartnerListFilter) {
-  const where: (SQL | undefined)[] = [customerScope(access, customers.id)];
+  const where: (SQL | undefined)[] = [partnerScope(access)];
   if (filter.status && filter.status !== "all") {
     where.push(eq(customers.status, filter.status as "active"));
   }

@@ -5,13 +5,16 @@ import { createPortal } from "react-dom";
 import { Menu, X } from "lucide-react";
 import { Nav, type NavCounts } from "./nav";
 import { AnkordLogo } from "@/components/brand/logo";
+import type { Section } from "@/lib/sections";
 
 export function MobileNav({
   counts,
   restricted,
+  sections,
 }: {
   counts?: NavCounts;
   restricted?: boolean;
+  sections?: readonly Section[];
 }) {
   // `open` can only become true from a click, so the portal is never reached
   // during server rendering and no mounted flag is needed.
@@ -70,7 +73,12 @@ export function MobileNav({
                     <X className="size-4" />
                   </button>
                 </div>
-                <Nav counts={counts} restricted={restricted} onNavigate={() => setOpen(false)} />
+                <Nav
+                  counts={counts}
+                  restricted={restricted}
+                  sections={sections}
+                  onNavigate={() => setOpen(false)}
+                />
               </div>
             </div>,
             document.body,

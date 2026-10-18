@@ -2,7 +2,7 @@ import "server-only";
 import { asc, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { projectAccounts, projectContacts, projectPhases, projectSteps, projects } from "@/lib/db/schema";
-import { canSeeCustomer } from "@/lib/access";
+import { canSeeCustomer, getAccess, hasSection } from "@/lib/access";
 
 /** Null when it does not exist — or when this person may not see its customer. */
 export async function getProject(id: string) {
@@ -23,8 +23,11 @@ export async function getProject(id: string) {
       accounts: { orderBy: [asc(projectAccounts.position)] },
     },
   });
-  if (!project || !(await canSeeCustomer(project.customerId))) return null;
-  return project;
+  if (!project) return null;
+  const access = await getAccess();
+  if (!hasSection(access, "projects") || !(await canSeeCustomer(project.customerId))) return null;
+  if (hasSection(access, "contacts")) return project;
+  return { ...project, customer: { ...project.customer, contacts: [] } };
 }
 
 export type ProjectRecord = NonNullable<Awaited<ReturnType<typeof getProject>>>;

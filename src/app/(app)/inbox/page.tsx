@@ -12,7 +12,7 @@ import { getGraphToken, requireUser, sessionScopes } from "@/lib/auth/session";
 import { hasScopeSet } from "@/lib/auth/entra";
 import { listSharedMailboxes, resolveMailbox } from "@/lib/data/common";
 import { ButtonLink } from "@/components/ui/button";
-import { canSeeCustomer, customerScope, getAccess } from "@/lib/access";
+import { canSeeCustomer, customerScope, getAccess, projectListScope } from "@/lib/access";
 import {
   addressOf,
   cleanText,
@@ -65,7 +65,7 @@ export default async function InboxPage({
     db
       .select({ id: projects.id, name: projects.name, customerId: projects.customerId })
       .from(projects)
-      .where(customerScope(access, projects.customerId))
+      .where(projectListScope(access))
       .orderBy(asc(projects.name)),
     access.restricted
       ? Promise.resolve([])

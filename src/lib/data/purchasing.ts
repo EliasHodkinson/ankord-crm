@@ -3,7 +3,7 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { getDb } from "@/lib/db";
 import { documentLines, documents, type Document } from "@/lib/db/schema";
-import { customerScope, getAccess } from "@/lib/access";
+import { documentScope, getAccess } from "@/lib/access";
 import { numbersIn, shortfalls } from "@/lib/sales/purchasing";
 
 /**
@@ -31,7 +31,7 @@ export async function salesLinksFor(purchaseOrderId: string) {
     .from(documentLines)
     .innerJoin(source, eq(source.id, documentLines.sourceLineId))
     .innerJoin(documents, eq(documents.id, source.documentId))
-    .where(and(eq(documentLines.documentId, purchaseOrderId), customerScope(access, documents.partnerId)));
+    .where(and(eq(documentLines.documentId, purchaseOrderId), documentScope(access)));
 }
 
 /**
@@ -51,7 +51,7 @@ export async function suggestedSalesFor(po: Pick<Document, "reference" | "remark
         inArray(documents.type, ["sales_order", "invoice"]),
         sql`${documents.status} <> 'cancelled'`,
         inArray(sql`upper(${documents.number})`, numbers),
-        customerScope(access, documents.partnerId),
+        documentScope(access),
       ),
     );
 }

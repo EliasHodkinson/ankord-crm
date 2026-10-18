@@ -7,7 +7,7 @@ import { z } from "zod";
 import { getDb } from "@/lib/db";
 import { customers } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth/session";
-import { assertCustomer, assertStaff } from "@/lib/access";
+import { assertCustomer, assertSection, assertStaff } from "@/lib/access";
 import { autoProvisionFolder } from "./files";
 import { refreshBriefIfPresent } from "./brief";
 import { isPartnerType, PARTNER_TYPE_FIELD } from "@/lib/contact-kinds";
@@ -106,6 +106,7 @@ export async function updateCustomer(
   formData: FormData,
 ): Promise<ActionState> {
   await requireUser();
+  await assertSection("customers");
   await assertCustomer(id);
   const parsed = customerSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return fromZod(parsed.error);
@@ -158,6 +159,7 @@ export async function archiveCustomer(id: string): Promise<void> {
  */
 export async function setPartnerType(id: string, type: string, on: boolean): Promise<ActionState> {
   await requireUser();
+  await assertSection("customers");
   await assertCustomer(id);
   if (!isPartnerType(type)) return { ok: false, message: "That isn't a business partner type." };
 

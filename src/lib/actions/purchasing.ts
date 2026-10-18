@@ -17,7 +17,7 @@ import {
   type Document,
 } from "@/lib/db/schema";
 import { ReadOnlyError, requireMember, requireUser } from "@/lib/auth/session";
-import { AccessDenied, assertCustomer, customerScope, getAccess } from "@/lib/access";
+import { AccessDenied, assertCustomer, documentScope, getAccess } from "@/lib/access";
 import { priceItems } from "@/lib/data/items";
 import { taxRateMap } from "@/lib/data/xero-cache";
 import { availableStock } from "@/lib/data/stock";
@@ -772,7 +772,7 @@ export async function searchSalesForLink(term: string): Promise<LinkOption[]> {
         sql`(${documents.type} = 'sales_order' and ${documents.status} = 'open'
           or ${documents.type} = 'invoice' and ${documents.status} in ('open','closed'))`,
         term.trim() ? sql`(${documents.number} ilike ${like} or ${documents.partnerName} ilike ${like})` : undefined,
-        customerScope(access, documents.partnerId),
+        documentScope(access),
       ),
     )
     .orderBy(sql`${documents.docDate} desc`)

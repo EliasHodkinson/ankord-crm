@@ -6,7 +6,7 @@ import { z } from "zod";
 import { getDb } from "@/lib/db";
 import { contactFacts, contacts } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth/session";
-import { assertContact, assertContactFact, assertCustomer } from "@/lib/access";
+import { assertContact, assertContactFact, assertCustomer, assertSection } from "@/lib/access";
 import {
   emptyToNull,
   fail,
@@ -66,6 +66,7 @@ export async function createContact(
   const { user } = await requireUser();
   const parsed = contactSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return fromZod(parsed.error);
+  await assertSection("contacts");
   await assertCustomer(parsed.data.customerId);
 
   if (parsed.data.isPrimary) await demoteOtherPrimaries(parsed.data.customerId);

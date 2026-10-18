@@ -357,6 +357,13 @@ someone (which signs them out everywhere and takes back the folder access the
 CRM gave them). Enforcement is on the server, in `src/lib/access.ts` — every
 read, action, search and file route goes through it.
 
+A restricted person can be narrowed further under **Sections they can open**:
+Follow-ups, Business Partners, People, Projects, Sales, Purchasing and Link
+email (`src/lib/sections.ts`). A section switched off is gone from the rail,
+⌘K, search, the partner and project pages, Overview and the MCP tools, and its
+pages and actions refuse them. Overview is always on. Someone restricted
+before sections existed keeps every section until an admin saves the list.
+
 ### Bringing in a VA
 
 **If they already have an account in the tenant** — Ankor'd's VA works from

@@ -7,7 +7,7 @@ import { DocumentEditor, type EditorLine } from "./document-editor";
 import { getDb } from "@/lib/db";
 import { projects } from "@/lib/db/schema";
 import { canWriteSales, requireUser } from "@/lib/auth/session";
-import { customerScope, getAccess } from "@/lib/access";
+import { getAccess, projectListScope } from "@/lib/access";
 import { copyDraft, getDocument, partnerDefaults, type EditorHeader } from "@/lib/data/documents";
 import { getSettings, listTeam } from "@/lib/data/common";
 import { readXeroRefs } from "@/lib/data/xero-cache";
@@ -69,7 +69,7 @@ export async function DocumentFormPage({
     getDb()
       .select({ id: projects.id, name: projects.name, customerId: projects.customerId })
       .from(projects)
-      .where(and(inArray(projects.status, ["planning", "active", "on_hold"]), customerScope(access, projects.customerId)))
+      .where(and(inArray(projects.status, ["planning", "active", "on_hold"]), projectListScope(access)))
       .orderBy(asc(projects.name)),
   ]);
 

@@ -14,6 +14,7 @@ import {
   assertKeyContact,
   assertPhase,
   assertProject,
+  assertSection,
   assertStep,
 } from "@/lib/access";
 import { findTemplate } from "@/lib/templates";
@@ -60,6 +61,7 @@ export async function createProject(
   const { user } = await requireUser();
   const parsed = projectSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return fromZod(parsed.error);
+  await assertSection("projects");
   await assertCustomer(parsed.data.customerId);
 
   const templateKey = String(formData.get("templateKey") ?? "blank");

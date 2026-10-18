@@ -30,8 +30,16 @@ import {
   users,
 } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth/session";
-import { customerScope, getAccess, linkedScope } from "@/lib/access";
 import {
+  activityScope,
+  contactScope,
+  getAccess,
+  hasSection,
+  partnerScope,
+  projectListScope,
+} from "@/lib/access";
+import {
+  cn,
   daysAway,
   daysUntilAnniversary,
   formatDate,
@@ -54,8 +62,16 @@ export default async function DashboardPage() {
   const db = getDb();
   // Everything below is scoped to what this person may see. For staff these
   // are all undefined, and the queries are exactly what they were.
-  const byProjectCustomer = customerScope(access, projects.customerId);
-  const byContactCustomer = customerScope(access, contacts.customerId);
+  const byProjectCustomer = projectListScope(access);
+  const byContactCustomer = contactScope(access);
+  // Tiles and cards for a section switched off for a restricted person are left off.
+  const show = {
+    projects: hasSection(access, "projects"),
+    customers: hasSection(access, "customers"),
+    contacts: hasSection(access, "contacts"),
+  };
+  const statCount =
+    (restricted ? 0 : 1) + (show.projects ? 2 : 0) + (show.customers ? 1 : 0);
 
   const [
     pipeline,
@@ -162,12 +178,7 @@ export default async function DashboardPage() {
       .leftJoin(users, eq(users.id, activity.actorId))
       // A restricted person sees the trail on their own partners only — not
       // settings changes, imports, or anything on a lead.
-      .where(
-        linkedScope(access, {
-          customerId: activity.customerId,
-          projectId: activity.projectId,
-        }),
-      )
+      .where(activityScope(access))
       .orderBy(desc(activity.createdAt))
       .limit(10),
 
@@ -177,7 +188,7 @@ export default async function DashboardPage() {
       .where(
         and(
           eq(customers.status, "active"),
-          customerScope(access, customers.id),
+          partnerScope(access),
         ),
       ),
   ]);
@@ -253,55 +264,69 @@ export default async function DashboardPage() {
                 New lead
               </ButtonLink>
             )}
-            <ButtonLink href="/projects/new" variant="primary">
-              New project
-            </ButtonLink>
+            {show.projects ? (
+              <ButtonLink href="/projects/new" variant="primary">
+                New project
+              </ButtonLink>
+            ) : null}
           </>
         }
       />
 
       <PageBody className="flex flex-col gap-5">
-        <div
-          className={
-            restricted
-              ? "grid gap-3 sm:grid-cols-3"
-              : "grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
-          }
-        >
-          {restricted ? null : (
-            <Stat
-              href="/leads"
-              icon={Target}
-              label="Open pipeline"
-              value={money(pipeline[0]?.value ?? 0)}
-              detail={`${pipeline[0]?.count ?? 0} leads in play`}
-            />
-          )}
-          <Stat
-            href="/projects"
-            icon={FolderKanban}
-            label="Active projects"
-            value={String(activeProjects[0]?.count ?? 0)}
-            detail="Currently being delivered"
-          />
-          <Stat
-            href="/projects?status=all"
-            icon={OctagonAlert}
-            label="Blocked steps"
-            value={String(blockedSteps.length)}
-            detail={
-              blockedSteps.length > 0 ? "Waiting on someone" : "Nothing stuck"
+        {statCount ? (
+          <div
+            className={
+              restricted
+                ? cn(
+                    "grid gap-3",
+                    statCount === 3 && "sm:grid-cols-3",
+                    statCount === 2 && "sm:grid-cols-2",
+                  )
+                : "grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
             }
-            urgent={blockedSteps.length > 0}
-          />
-          <Stat
-            href="/customers"
-            icon={Building2}
-            label="Business partners"
-            value={String(counts[0]?.customers ?? 0)}
-            detail="On the books"
-          />
-        </div>
+          >
+            {restricted ? null : (
+              <Stat
+                href="/leads"
+                icon={Target}
+                label="Open pipeline"
+                value={money(pipeline[0]?.value ?? 0)}
+                detail={`${pipeline[0]?.count ?? 0} leads in play`}
+              />
+            )}
+            {show.projects ? (
+              <>
+                <Stat
+                  href="/projects"
+                  icon={FolderKanban}
+                  label="Active projects"
+                  value={String(activeProjects[0]?.count ?? 0)}
+                  detail="Currently being delivered"
+                />
+                <Stat
+                  href="/projects?status=all"
+                  icon={OctagonAlert}
+                  label="Blocked steps"
+                  value={String(blockedSteps.length)}
+                  detail={
+                    blockedSteps.length > 0 ? "Waiting on someone" : "Nothing stuck"
+                  }
+                  urgent={blockedSteps.length > 0}
+                />
+              </>
+            ) : null}
+            {show.customers ? (
+              <Stat
+                href="/customers"
+                icon={Building2}
+                label="Business partners"
+                value={String(counts[0]?.customers ?? 0)}
+                detail="On the books"
+              />
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="grid gap-5 lg:grid-cols-2">
           {restricted ? null : (
@@ -384,130 +409,137 @@ export default async function DashboardPage() {
             </Card>
           )}
 
-          <Card>
-            <CardHeader title="Blocked" meta="Steps waiting on someone else" />
-            {blockedSteps.length === 0 ? (
-              <EmptyState
-                compact
-                title="Nothing is stuck"
-                description="When a runbook step gets marked blocked, it appears here so it can be chased before it costs a week."
-              />
-            ) : (
-              <ul className="divide-y divide-[var(--border-soft)]">
-                {blockedSteps.map(({ step, projectName, customerName }) => (
-                  <li key={step.id} className="flex items-center hover:bg-[var(--surface-2)]">
-                    <Link
-                      href={`/projects/${step.projectId}?step=${step.id}`}
-                      className="flex min-w-0 flex-1 items-start gap-3 py-2.5 pl-4 transition-colors"
-                    >
-                      <OctagonAlert className="mt-0.5 size-3.5 shrink-0 text-[var(--danger)]" />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[13px] font-medium text-[var(--text)]">
-                          {step.title}
-                        </p>
-                        <p className="truncate text-[12px] text-[var(--text-muted)]">
-                          {customerName} · {projectName}
-                          {step.blockedOn
-                            ? ` · waiting on ${step.blockedOn}`
-                            : ""}
-                        </p>
-                      </div>
-                      {step.blockedSince ? (
-                        <span className="shrink-0 text-[11px] text-[var(--text-faint)]">
-                          {relativeTime(step.blockedSince)}
-                        </span>
-                      ) : null}
-                    </Link>
-                    <ClearBlockerButton step={step} className="mx-4" />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
-
-          <Card>
-            <CardHeader
-              title="Assigned to you"
-              meta="Runbook steps with your name on them"
-            />
-            {myWork.length === 0 ? (
-              <EmptyState
-                compact
-                title="No steps assigned to you"
-                description="Open a project runbook and assign yourself a step — it will show up here with its due date."
-              />
-            ) : (
-              <ul className="divide-y divide-[var(--border-soft)]">
-                {myWork.map(({ step, projectName }) => (
-                  <li key={step.id} className="flex items-center hover:bg-[var(--surface-2)]">
-                    <Link
-                      href={`/projects/${step.projectId}?step=${step.id}`}
-                      className="flex min-w-0 flex-1 items-start gap-3 py-2.5 pl-4 transition-colors"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[13px] font-medium text-[var(--text)]">
-                          {step.title}
-                        </p>
-                        <p className="truncate text-[12px] text-[var(--text-muted)]">
-                          {projectName}
-                        </p>
-                      </div>
-                      {step.dueDate ? (
-                        <span
-                          className={
-                            step.dueDate < today()
-                              ? "shrink-0 text-[11px] font-medium text-[var(--danger)]"
-                              : "shrink-0 text-[11px] text-[var(--text-faint)]"
-                          }
+          {show.projects ? (
+            <>
+              <Card>
+                <CardHeader title="Blocked" meta="Steps waiting on someone else" />
+                {blockedSteps.length === 0 ? (
+                  <EmptyState
+                    compact
+                    title="Nothing is stuck"
+                    description="When a runbook step gets marked blocked, it appears here so it can be chased before it costs a week."
+                  />
+                ) : (
+                  <ul className="divide-y divide-[var(--border-soft)]">
+                    {blockedSteps.map(({ step, projectName, customerName }) => (
+                      <li key={step.id} className="flex items-center hover:bg-[var(--surface-2)]">
+                        <Link
+                          href={`/projects/${step.projectId}?step=${step.id}`}
+                          className="flex min-w-0 flex-1 items-start gap-3 py-2.5 pl-4 transition-colors"
                         >
-                          {formatDate(step.dueDate)}
-                        </span>
-                      ) : null}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
+                          <OctagonAlert className="mt-0.5 size-3.5 shrink-0 text-[var(--danger)]" />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-[13px] font-medium text-[var(--text)]">
+                              {step.title}
+                            </p>
+                            <p className="truncate text-[12px] text-[var(--text-muted)]">
+                              {customerName} · {projectName}
+                              {step.blockedOn
+                                ? ` · waiting on ${step.blockedOn}`
+                                : ""}
+                            </p>
+                          </div>
+                          {step.blockedSince ? (
+                            <span className="shrink-0 text-[11px] text-[var(--text-faint)]">
+                              {relativeTime(step.blockedSince)}
+                            </span>
+                          ) : null}
+                        </Link>
+                        <ClearBlockerButton step={step} className="mx-4" />
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Card>
 
-          <Card>
-            <CardHeader
-              title="Coming up"
-              meta="Birthdays and the things people mentioned"
-            />
-            {comingUp.length === 0 ? (
-              <EmptyState
-                compact
-                title="Nothing in the next six weeks"
-                description="Add a birthday or a note like “daughter's wedding in March” against a contact and it will surface here in time to do something about it."
+              <Card>
+                <CardHeader
+                  title="Assigned to you"
+                  meta="Runbook steps with your name on them"
+                />
+                {myWork.length === 0 ? (
+                  <EmptyState
+                    compact
+                    title="No steps assigned to you"
+                    description="Open a project runbook and assign yourself a step — it will show up here with its due date."
+                  />
+                ) : (
+                  <ul className="divide-y divide-[var(--border-soft)]">
+                    {myWork.map(({ step, projectName }) => (
+                      <li key={step.id} className="flex items-center hover:bg-[var(--surface-2)]">
+                        <Link
+                          href={`/projects/${step.projectId}?step=${step.id}`}
+                          className="flex min-w-0 flex-1 items-start gap-3 py-2.5 pl-4 transition-colors"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-[13px] font-medium text-[var(--text)]">
+                              {step.title}
+                            </p>
+                            <p className="truncate text-[12px] text-[var(--text-muted)]">
+                              {projectName}
+                            </p>
+                          </div>
+                          {step.dueDate ? (
+                            <span
+                              className={
+                                step.dueDate < today()
+                                  ? "shrink-0 text-[11px] font-medium text-[var(--danger)]"
+                                  : "shrink-0 text-[11px] text-[var(--text-faint)]"
+                              }
+                            >
+                              {formatDate(step.dueDate)}
+                            </span>
+                          ) : null}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Card>
+
+            </>
+          ) : null}
+
+          {show.contacts ? (
+            <Card>
+              <CardHeader
+                title="Coming up"
+                meta="Birthdays and the things people mentioned"
               />
-            ) : (
-              <ul className="divide-y divide-[var(--border-soft)]">
-                {comingUp.map((event) => (
-                  <li key={event.key}>
-                    <Link
-                      href={`/customers/${event.customerId}`}
-                      className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-[var(--surface-2)]"
-                    >
-                      <CalendarHeart className="size-3.5 shrink-0 text-[var(--color-sunrise-500)]" />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[13px] text-[var(--text)]">
-                          <span className="font-medium">{event.who}</span> —{" "}
-                          {event.what}
-                        </p>
-                        <p className="truncate text-[12px] text-[var(--text-muted)]">
-                          {event.where} · {formatDate(event.date, "day")}
-                        </p>
-                      </div>
-                      <Badge tone={event.days <= 7 ? "accent" : "neutral"}>
-                        {event.days === 0 ? "Today" : `${event.days}d`}
-                      </Badge>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
+              {comingUp.length === 0 ? (
+                <EmptyState
+                  compact
+                  title="Nothing in the next six weeks"
+                  description="Add a birthday or a note like “daughter's wedding in March” against a contact and it will surface here in time to do something about it."
+                />
+              ) : (
+                <ul className="divide-y divide-[var(--border-soft)]">
+                  {comingUp.map((event) => (
+                    <li key={event.key}>
+                      <Link
+                        href={`/customers/${event.customerId}`}
+                        className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-[var(--surface-2)]"
+                      >
+                        <CalendarHeart className="size-3.5 shrink-0 text-[var(--color-sunrise-500)]" />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-[13px] text-[var(--text)]">
+                            <span className="font-medium">{event.who}</span> —{" "}
+                            {event.what}
+                          </p>
+                          <p className="truncate text-[12px] text-[var(--text-muted)]">
+                            {event.where} · {formatDate(event.date, "day")}
+                          </p>
+                        </div>
+                        <Badge tone={event.days <= 7 ? "accent" : "neutral"}>
+                          {event.days === 0 ? "Today" : `${event.days}d`}
+                        </Badge>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          ) : null}
         </div>
 
         <Card>

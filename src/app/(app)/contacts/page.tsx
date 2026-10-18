@@ -12,7 +12,7 @@ import { getDb } from "@/lib/db";
 import { contacts, customers } from "@/lib/db/schema";
 import { daysUntilAnniversary, formatDate } from "@/lib/utils";
 import { requireUser } from "@/lib/auth/session";
-import { customerScope, getAccess } from "@/lib/access";
+import { contactScope, getAccess } from "@/lib/access";
 
 export const metadata: Metadata = { title: "People" };
 export const dynamic = "force-dynamic";
@@ -27,7 +27,7 @@ export default async function ContactsPage({
   const { q, sort } = await searchParams;
 
   const filters: SQL[] = [isNull(contacts.archivedAt)];
-  const scope = customerScope(access, contacts.customerId);
+  const scope = contactScope(access);
   if (scope) filters.push(scope);
   if (q) {
     filters.push(

@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { customers, leads, projects } from "@/lib/db/schema";
 import { getGraphToken, requireUser } from "@/lib/auth/session";
-import { assertCustomer, assertProject, assertStaff } from "@/lib/access";
+import { assertCustomer, assertProject, assertSection, assertStaff } from "@/lib/access";
 import { applyGrantsForCustomerFolder } from "@/lib/sharepoint-access";
 import { getSettings } from "@/lib/data/common";
 import { ensureChildFolders, ensureFolderPath } from "@/lib/graph/sharepoint";
@@ -24,8 +24,10 @@ export async function provisionFolder(
   scope: { customerId: string } | { projectId: string } | { leadId: string },
 ): Promise<ActionState> {
   const { user } = await requireUser();
-  if ("customerId" in scope) await assertCustomer(scope.customerId);
-  else if ("projectId" in scope) await assertProject(scope.projectId);
+  if ("customerId" in scope) {
+    await assertSection("customers");
+    await assertCustomer(scope.customerId);
+  } else if ("projectId" in scope) await assertProject(scope.projectId);
   else await assertStaff();
 
   const db = getDb();

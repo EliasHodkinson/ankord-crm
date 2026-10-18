@@ -42,7 +42,7 @@ import { readXeroSnapshot } from "@/lib/data/xero";
 import { readXeroConnection } from "@/lib/xero/auth";
 import { updateCustomer } from "@/lib/actions/customers";
 import { requireUser } from "@/lib/auth/session";
-import { getAccess } from "@/lib/access";
+import { getAccess, hasSection } from "@/lib/access";
 import { PartnerTypeToggles } from "./type-toggles";
 import { formatDate } from "@/lib/utils";
 
@@ -71,7 +71,17 @@ export default async function CustomerPage({
   if (!customer) notFound();
   // Xero is staff-only: balances and invoices are not part of what a partner
   // grant shares, and the link picker searches every Xero contact.
-  const { restricted } = await getAccess();
+  const access = await getAccess();
+  const { restricted } = access;
+  // Sections switched off for a restricted person are left off the page.
+  const show = {
+    projects: hasSection(access, "projects"),
+    sales: hasSection(access, "sales"),
+    purchasing: hasSection(access, "purchasing"),
+    people: hasSection(access, "contacts"),
+    tasks: hasSection(access, "tasks"),
+    inbox: hasSection(access, "inbox"),
+  };
   const marketing = restricted ? null : await marketingForCustomer(id);
 
   const [entries, team, settings, folder, xero, xeroConn, partnerDocs] = await Promise.all([
@@ -86,6 +96,8 @@ export default async function CustomerPage({
   const xeroLive = Boolean(xeroConn);
   const salesDocs = partnerDocs.filter((d) => DOC_TYPES[d.type].side === "customer");
   const purchaseDocs = partnerDocs.filter((d) => DOC_TYPES[d.type].side === "supplier");
+  const showSales = show.sales && (customer.isCustomer || salesDocs.length > 0);
+  const showPurchasing = show.purchasing && (customer.isSupplier || purchaseDocs.length > 0);
 
   const address = [
     customer.addressLine1,
@@ -163,14 +175,16 @@ export default async function CustomerPage({
         <RecordNav
           className="col-span-full xl:col-span-1"
           sections={[
-            { id: "projects", label: "Projects", count: customer.projects.length },
-            ...(customer.isCustomer || salesDocs.length
-              ? [{ id: "sales", label: "Sales", count: salesDocs.length }]
+            ...(show.projects
+              ? [{ id: "projects", label: "Projects", count: customer.projects.length }]
               : []),
-            ...(customer.isSupplier || purchaseDocs.length
+            ...(showSales ? [{ id: "sales", label: "Sales", count: salesDocs.length }] : []),
+            ...(showPurchasing
               ? [{ id: "purchasing", label: "Purchasing", count: purchaseDocs.length }]
               : []),
-            { id: "people", label: "People", count: customer.contacts.length },
+            ...(show.people
+              ? [{ id: "people", label: "People", count: customer.contacts.length }]
+              : []),
             { id: "history", label: "History", count: entries.length },
             { id: "accounts", label: "Accounts", count: customer.accounts.length },
             ...(restricted ? [] : [{ id: "xero", label: "Xero" }]),
@@ -179,58 +193,59 @@ export default async function CustomerPage({
           ]}
         />
         <div className="flex flex-col gap-5">
-          <Card id="projects" className="scroll-mt-20">
-            <CardHeader
-              title="Projects"
-              meta={
-                customer.projects.length === 0
-                  ? "Nothing running yet"
-                  : `${customer.projects.length} on record`
-              }
-              action={
-                <ButtonLink
-                  href={`/projects/new?customer=${customer.id}`}
-                  variant="ghost"
-                  size="sm"
-                >
-                  <Plus />
-                  Add
-                </ButtonLink>
-              }
-            />
-            {customer.projects.length === 0 ? (
-              <EmptyState
-                compact
-                title="No projects for this business partner"
-                description="Start one from a runbook template — phases, steps, key contacts and an account register, ready to work through."
+          {show.projects ? (
+            <Card id="projects" className="scroll-mt-20">
+              <CardHeader
+                title="Projects"
+                meta={
+                  customer.projects.length === 0
+                    ? "Nothing running yet"
+                    : `${customer.projects.length} on record`
+                }
                 action={
                   <ButtonLink
                     href={`/projects/new?customer=${customer.id}`}
-                    variant="primary"
+                    variant="ghost"
                     size="sm"
                   >
                     <Plus />
-                    New project
+                    Add
                   </ButtonLink>
                 }
               />
-            ) : (
-              <ul className="divide-y divide-[var(--border-soft)]">
-                {customer.projects.map((project) => (
-                  <li key={project.id}>
-                    <Link
-                      href={`/projects/${project.id}`}
-                      className="flex items-start gap-3 px-4 py-3 transition-colors hover:bg-[var(--surface-2)]"
+              {customer.projects.length === 0 ? (
+                <EmptyState
+                  compact
+                  title="No projects for this business partner"
+                  description="Start one from a runbook template — phases, steps, key contacts and an account register, ready to work through."
+                  action={
+                    <ButtonLink
+                      href={`/projects/new?customer=${customer.id}`}
+                      variant="primary"
+                      size="sm"
                     >
-                      <div className="min-w-0 flex-1">
-                        <p className="flex flex-wrap items-center gap-2">
-                          <span className="text-[13px] font-medium text-[var(--text)]">
-                            {project.name}
-                          </span>
-                          {project.code ? (
-                            <span className="font-mono text-[11px] text-[var(--text-faint)]">
-                              {project.code}
+                      <Plus />
+                      New project
+                    </ButtonLink>
+                  }
+                />
+              ) : (
+                <ul className="divide-y divide-[var(--border-soft)]">
+                  {customer.projects.map((project) => (
+                    <li key={project.id}>
+                      <Link
+                        href={`/projects/${project.id}`}
+                        className="flex items-start gap-3 px-4 py-3 transition-colors hover:bg-[var(--surface-2)]"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="flex flex-wrap items-center gap-2">
+                            <span className="text-[13px] font-medium text-[var(--text)]">
+                              {project.name}
                             </span>
+                            {project.code ? (
+                              <span className="font-mono text-[11px] text-[var(--text-faint)]">
+                                {project.code}
+                              </span>
                           ) : null}
                         </p>
                         {project.summary ? (
@@ -251,8 +266,9 @@ export default async function CustomerPage({
               </ul>
             )}
           </Card>
+          ) : null}
 
-          {customer.isCustomer || salesDocs.length ? (
+          {showSales ? (
             <DocumentSummary
               id="sales"
               title="Sales"
@@ -263,7 +279,7 @@ export default async function CustomerPage({
             />
           ) : null}
 
-          {customer.isSupplier || purchaseDocs.length ? (
+          {showPurchasing ? (
             <DocumentSummary
               id="purchasing"
               title="Purchasing"
@@ -275,31 +291,37 @@ export default async function CustomerPage({
             />
           ) : null}
 
-          <Card id="people" className="scroll-mt-20">
-            <CardHeader
-              title="People"
-              meta="Who we actually deal with, and what makes them tick"
-            />
-            <CardBody>
-              <ContactsPanel customerId={customer.id} contacts={customer.contacts} />
-            </CardBody>
-          </Card>
+          {show.people ? (
+            <Card id="people" className="scroll-mt-20">
+              <CardHeader
+                title="People"
+                meta="Who we actually deal with, and what makes them tick"
+              />
+              <CardBody>
+                <ContactsPanel customerId={customer.id} contacts={customer.contacts} />
+              </CardBody>
+            </Card>
+          ) : null}
 
-          <RecordTasks
-            scope={{ customerId: customer.id }}
-            revalidate={`/customers/${customer.id}`}
-            placeholder="Send the quarterly report…"
-          />
+          {show.tasks ? (
+            <RecordTasks
+              scope={{ customerId: customer.id }}
+              revalidate={`/customers/${customer.id}`}
+              placeholder="Send the quarterly report…"
+            />
+          ) : null}
 
           <Card id="history" className="scroll-mt-20">
             <CardHeader
               title="Communications"
               meta={`${entries.length} logged · emails linked from Microsoft 365 appear here`}
               action={
-                <ButtonLink href={`/inbox?customer=${customer.id}`} variant="ghost" size="sm">
-                  <Mail />
-                  Link email
-                </ButtonLink>
+                show.inbox ? (
+                  <ButtonLink href={`/inbox?customer=${customer.id}`} variant="ghost" size="sm">
+                    <Mail />
+                    Link email
+                  </ButtonLink>
+                ) : null
               }
             />
             <CardBody className="flex flex-col gap-4">

@@ -6,7 +6,7 @@ import { z } from "zod";
 import { getDb } from "@/lib/db";
 import { projectAccounts } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth/session";
-import { assertAccount, assertLinks, assertStaff } from "@/lib/access";
+import { assertAccount, assertLinks, assertSection, assertStaff } from "@/lib/access";
 import {
   fromZod,
   logActivity,
@@ -53,6 +53,8 @@ export async function saveAccount(
   await assertLinks(values);
   // An entry against nothing would be invisible to a restricted person anyway.
   if (!values.customerId && !values.projectId) await assertStaff();
+  // A partner's own register sits on its page.
+  if (!values.projectId) await assertSection("customers");
   const row = { ...values, costAud: costAud?.toString() ?? null };
   const db = getDb();
 

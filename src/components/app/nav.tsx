@@ -24,20 +24,21 @@ import {
   Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SECTIONS as ALL_SECTIONS, type Section } from "@/lib/sections";
 
 const SECTIONS: { heading?: string; items: NavItem[] }[] = [
   {
     items: [
       { href: "/", label: "Overview", icon: Gauge, exact: true },
-      { href: "/tasks", label: "Follow-ups", icon: CircleCheck, badge: "due" },
+      { href: "/tasks", section: "tasks", label: "Follow-ups", icon: CircleCheck, badge: "due" },
     ],
   },
   {
     heading: "Pipeline",
     items: [
       { href: "/leads", label: "Leads", icon: Target, staffOnly: true },
-      { href: "/customers", label: "Business Partners", icon: Building2 },
-      { href: "/contacts", label: "People", icon: Users },
+      { href: "/customers", section: "customers", label: "Business Partners", icon: Building2 },
+      { href: "/contacts", section: "contacts", label: "People", icon: Users },
     ],
   },
   {
@@ -49,10 +50,10 @@ const SECTIONS: { heading?: string; items: NavItem[] }[] = [
   {
     heading: "Sales",
     items: [
-      { href: "/sales/quotes", label: "Quotes", icon: FileText },
-      { href: "/sales/orders", label: "Sales orders", icon: Package, badge: "toOrder" },
-      { href: "/sales/invoices", label: "Invoices", icon: ReceiptText, badge: "overdue" },
-      { href: "/sales/deliveries", label: "Deliveries", icon: Truck },
+      { href: "/sales/quotes", section: "sales", label: "Quotes", icon: FileText },
+      { href: "/sales/orders", section: "sales", label: "Sales orders", icon: Package, badge: "toOrder" },
+      { href: "/sales/invoices", section: "sales", label: "Invoices", icon: ReceiptText, badge: "overdue" },
+      { href: "/sales/deliveries", section: "sales", label: "Deliveries", icon: Truck },
       { href: "/sales/items", label: "Items", icon: Tags, staffOnly: true },
       { href: "/sales/import", label: "Import from Xero", icon: CloudDownload, staffOnly: true },
     ],
@@ -60,16 +61,16 @@ const SECTIONS: { heading?: string; items: NavItem[] }[] = [
   {
     heading: "Purchasing",
     items: [
-      { href: "/purchasing/orders", label: "Purchase orders", icon: ShoppingCart, badge: "inTransit" },
-      { href: "/purchasing/receipts", label: "Receipts", icon: PackageCheck },
-      { href: "/purchasing/bills", label: "Bills", icon: ReceiptText },
+      { href: "/purchasing/orders", section: "purchasing", label: "Purchase orders", icon: ShoppingCart, badge: "inTransit" },
+      { href: "/purchasing/receipts", section: "purchasing", label: "Receipts", icon: PackageCheck },
+      { href: "/purchasing/bills", section: "purchasing", label: "Bills", icon: ReceiptText },
     ],
   },
   {
     heading: "Delivery",
     items: [
-      { href: "/projects", label: "Projects", icon: FolderKanban },
-      { href: "/inbox", label: "Link email", icon: Mail },
+      { href: "/projects", section: "projects", label: "Projects", icon: FolderKanban },
+      { href: "/inbox", section: "inbox", label: "Link email", icon: Mail },
       { href: "/reports", label: "Reports", icon: ChartNoAxesColumn, staffOnly: true },
       { href: "/import", label: "Import", icon: Upload, staffOnly: true },
     ],
@@ -88,16 +89,21 @@ type NavItem = {
   badge?: keyof NavCounts;
   /** Hidden from restricted people. The server refuses them regardless. */
   staffOnly?: boolean;
+  /** Hidden from a restricted person with this section switched off. */
+  section?: Section;
 };
 
 export function Nav({
   onNavigate,
   counts,
   restricted = false,
+  sections: open = ALL_SECTIONS,
 }: {
   onNavigate?: () => void;
   /** A restricted person is not offered the areas they cannot open. */
   restricted?: boolean;
+  /** The sections this person may open — all of them for staff. */
+  sections?: readonly Section[];
   /** Live numbers for the rail, e.g. how many follow-ups are due. */
   counts?: NavCounts;
 }) {
@@ -105,7 +111,10 @@ export function Nav({
   // A section with nothing this person can open is not shown at all.
   const sections = SECTIONS.map((section) => ({
     ...section,
-    items: section.items.filter((item) => !(restricted && item.staffOnly)),
+    items: section.items.filter(
+      (item) =>
+        !(restricted && item.staffOnly) && !(item.section && !open.includes(item.section)),
+    ),
   })).filter((section) => section.items.length);
 
   return (

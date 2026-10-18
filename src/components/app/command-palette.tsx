@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import type { SearchHit } from "@/app/api/search/route";
 import { cn } from "@/lib/utils";
+import { SECTIONS, type Section } from "@/lib/sections";
 
 type Item = {
   id: string;
@@ -39,6 +40,8 @@ type Item = {
   keywords?: string;
   /** Not offered to restricted people. The server refuses them regardless. */
   staffOnly?: boolean;
+  /** Not offered to a restricted person with this section switched off. */
+  section?: Section;
 };
 
 const KIND_ICON = {
@@ -80,7 +83,14 @@ function readRecent(): Recent[] {
  * anything, switch the theme. The fastest path through the CRM for anyone who
  * would rather not reach for the mouse.
  */
-export function CommandPalette({ restricted = false }: { restricted?: boolean }) {
+export function CommandPalette({
+  restricted = false,
+  sections = SECTIONS,
+}: {
+  restricted?: boolean;
+  /** The sections this person may open — all of them for staff. */
+  sections?: readonly Section[];
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -171,6 +181,7 @@ export function CommandPalette({ restricted = false }: { restricted?: boolean })
     { id: "n-home", label: "Overview", group: "Go to", icon: Gauge, run: () => go("/") },
     {
       id: "n-tasks",
+      section: "tasks",
       label: "Follow-ups",
       group: "Go to",
       icon: CircleCheck,
@@ -188,6 +199,7 @@ export function CommandPalette({ restricted = false }: { restricted?: boolean })
     },
     {
       id: "n-customers",
+      section: "customers",
       label: "Business Partners",
       group: "Go to",
       icon: Building2,
@@ -196,6 +208,7 @@ export function CommandPalette({ restricted = false }: { restricted?: boolean })
     },
     {
       id: "n-suppliers",
+      section: "customers",
       label: "Suppliers",
       group: "Go to",
       icon: Building2,
@@ -204,15 +217,24 @@ export function CommandPalette({ restricted = false }: { restricted?: boolean })
     },
     {
       id: "n-media",
+      section: "customers",
       label: "Media",
       group: "Go to",
       icon: Building2,
       run: () => go("/customers?type=media"),
       keywords: "business partners press journalists publications radio",
     },
-    { id: "n-people", label: "People", group: "Go to", icon: Users, run: () => go("/contacts") },
+    {
+      id: "n-people",
+      section: "contacts",
+      label: "People",
+      group: "Go to",
+      icon: Users,
+      run: () => go("/contacts"),
+    },
     {
       id: "n-projects",
+      section: "projects",
       label: "Projects",
       group: "Go to",
       icon: FolderKanban,
@@ -221,6 +243,7 @@ export function CommandPalette({ restricted = false }: { restricted?: boolean })
     },
     {
       id: "n-inbox",
+      section: "inbox",
       label: "Link email",
       group: "Go to",
       icon: Mail,
@@ -229,6 +252,7 @@ export function CommandPalette({ restricted = false }: { restricted?: boolean })
     },
     {
       id: "n-quotes",
+      section: "sales",
       label: "Quotes",
       group: "Go to",
       icon: FileText,
@@ -237,6 +261,7 @@ export function CommandPalette({ restricted = false }: { restricted?: boolean })
     },
     {
       id: "n-orders",
+      section: "sales",
       label: "Sales orders",
       group: "Go to",
       icon: Package,
@@ -245,6 +270,7 @@ export function CommandPalette({ restricted = false }: { restricted?: boolean })
     },
     {
       id: "n-invoices",
+      section: "sales",
       label: "Invoices",
       group: "Go to",
       icon: ReceiptText,
@@ -346,6 +372,7 @@ export function CommandPalette({ restricted = false }: { restricted?: boolean })
     },
     {
       id: "c-project",
+      section: "projects",
       label: "New project",
       group: "Create",
       icon: Plus,
@@ -382,7 +409,8 @@ export function CommandPalette({ restricted = false }: { restricted?: boolean })
     },
   ];
 
-  const allowed = (item: Item) => !(restricted && item.staffOnly);
+  const allowed = (item: Item) =>
+    !(restricted && item.staffOnly) && !(item.section && !sections.includes(item.section));
 
   const matches = (item: Item) =>
     !term ||

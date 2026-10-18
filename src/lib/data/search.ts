@@ -3,7 +3,7 @@ import { and, eq, ilike, or, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { contacts, customers, documents, leads, projects } from "@/lib/db/schema";
 import { docHref, documentTitle, typeLabel } from "@/lib/sales/doc-types";
-import { customerScope, getAccess } from "@/lib/access";
+import { contactScope, documentScope, getAccess, partnerScope, projectListScope } from "@/lib/access";
 import { PARTNER_TYPE } from "@/components/ui/status";
 import { isPartnerType, PARTNER_TYPE_FIELD, typesOf, type PartnerType } from "@/lib/contact-kinds";
 
@@ -48,7 +48,7 @@ export async function searchEverything(
       .where(
         and(
           or(ilike(customers.name, like), ilike(customers.legalName, like)),
-          customerScope(access, customers.id),
+          partnerScope(access),
           ofType,
         ),
       )
@@ -71,7 +71,7 @@ export async function searchEverything(
             ilike(contacts.lastName, like),
             ilike(contacts.email, like),
           ),
-          customerScope(access, contacts.customerId),
+          contactScope(access),
           ofType,
         ),
       )
@@ -92,7 +92,7 @@ export async function searchEverything(
           .where(
             and(
               or(ilike(projects.name, like), ilike(projects.code, like)),
-              customerScope(access, projects.customerId),
+              projectListScope(access),
             ),
           )
           .limit(perKind),
@@ -111,7 +111,7 @@ export async function searchEverything(
           .where(
             and(
               or(ilike(documents.number, like), ilike(documents.reference, like)),
-              customerScope(access, documents.partnerId),
+              documentScope(access),
             ),
           )
           .limit(perKind + 1),

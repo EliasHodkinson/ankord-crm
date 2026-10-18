@@ -56,8 +56,13 @@ before touching anything visual.
   restricted person may see. A new list query takes a `customerScope` /
   `linkedScope` / `taskScope` filter; a new action asserts the record it
   touches (`assertCustomer`, `assertProject`, `assertLinks`…) or `assertStaff`.
-  A new staff-only page calls `requireStaffPage()`. Never trust a `projectId`
-  or `customerId` sent alongside a child id — look the parent up.
+  A new staff-only page calls `requireStaffPage()`. A restricted person can
+  also have sections switched off (`lib/sections.ts`): list queries over
+  partners, contacts, projects and documents use `partnerScope` /
+  `contactScope` / `projectListScope` / `documentScope`, not a bare
+  `customerScope`, and a write in a section calls `assertSection()`.
+  Never trust a `projectId` or `customerId` sent alongside a child id — look
+  the parent up.
 - SharePoint permissions the CRM adds are recorded in `sharepoint_grants` and
   only those are ever removed. Never delete a permission the ledger did not add.
 - A new action that writes a project's phases, steps or name must call

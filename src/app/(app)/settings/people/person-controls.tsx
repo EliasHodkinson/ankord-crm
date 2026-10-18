@@ -6,10 +6,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/field";
 import { ActionForm, SaveIndicator, SubmitButton } from "@/components/ui/form";
+import { CheckboxField } from "@/components/app/form-kit";
+import { SECTIONS, SECTION_INFO, type Section } from "@/lib/sections";
 import { USER_ROLE, USER_ROLE_HINT } from "@/components/ui/status";
 import {
   retryFolderGrant,
   saveCustomerGrants,
+  saveSections,
   setPersonActive,
   setPersonRole,
 } from "@/lib/actions/people";
@@ -159,6 +162,31 @@ export function GrantsForm({
         />
         <div className="flex items-center gap-3">
           <SubmitButton pendingLabel="Saving and updating SharePoint…">Save access</SubmitButton>
+          <SaveIndicator />
+        </div>
+      </div>
+    </ActionForm>
+  );
+}
+
+export function SectionsForm({ userId, initial }: { userId: string; initial: Section[] }) {
+  return (
+    <ActionForm action={saveSections.bind(null, userId)}>
+      <div className="flex flex-col gap-4">
+        <div className="grid gap-2 sm:grid-cols-2">
+          {SECTIONS.map((section) => (
+            <CheckboxField
+              key={section}
+              id={`section-${section}`}
+              name={`section:${section}`}
+              label={SECTION_INFO[section].label}
+              hint={SECTION_INFO[section].hint}
+              defaultChecked={initial.includes(section)}
+            />
+          ))}
+        </div>
+        <div className="flex items-center gap-3">
+          <SubmitButton pendingLabel="Saving…">Save sections</SubmitButton>
           <SaveIndicator />
         </div>
       </div>

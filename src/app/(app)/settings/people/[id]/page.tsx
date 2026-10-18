@@ -15,7 +15,14 @@ import {
 import { getPerson } from "@/lib/data/people";
 import { requireAdmin } from "@/lib/auth/session";
 import { formatDateTime, relativeTime } from "@/lib/utils";
-import { ActiveControl, GrantsForm, RetryFolder, RoleControl } from "../person-controls";
+import { sectionsFrom } from "@/lib/sections";
+import {
+  ActiveControl,
+  GrantsForm,
+  RetryFolder,
+  RoleControl,
+  SectionsForm,
+} from "../person-controls";
 
 export const metadata: Metadata = { title: "Access" };
 export const dynamic = "force-dynamic";
@@ -106,6 +113,24 @@ export default async function PersonAccessPage({
                 archived: c.archived,
               }))}
               initial={initial}
+            />
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader
+            title="Sections they can open"
+            meta={
+              person.role === "restricted"
+                ? "Within those partners, only these parts of the CRM. Overview is always there — it is where they land."
+                : "Not in force: this role opens every section. These apply if they are restricted."
+            }
+          />
+          <CardBody>
+            <SectionsForm
+              key={(person.sections ?? []).join()}
+              userId={person.id}
+              initial={sectionsFrom(person.sections)}
             />
           </CardBody>
         </Card>

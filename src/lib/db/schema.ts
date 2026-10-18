@@ -124,6 +124,11 @@ export const users = pgTable(
     /** Set when an admin added this person from Settings, before they signed in. */
     invitedById: uuid("invited_by_id"),
     invitedAt: timestamp("invited_at", { withTimezone: true }),
+    /**
+     * For a restricted person, the areas they may open (lib/sections.ts).
+     * Null means all of them.
+     */
+    sections: text("sections").array(),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

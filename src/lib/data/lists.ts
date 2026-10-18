@@ -2,7 +2,7 @@ import "server-only";
 import { and, asc, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { contacts, customers, leads, projectSteps, projects, users } from "@/lib/db/schema";
-import { assertLead, assertStaff, customerScope, getAccess } from "@/lib/access";
+import { assertLead, assertStaff, contactScope, getAccess, partnerScope, projectListScope } from "@/lib/access";
 import {
   kindToType,
   PARTNER_TYPE_FIELD,
@@ -26,7 +26,7 @@ export async function listCustomerRows(filter: {
   limit?: number;
 }) {
   const access = await getAccess();
-  const where: (SQL | undefined)[] = [customerScope(access, customers.id)];
+  const where: (SQL | undefined)[] = [partnerScope(access)];
   if (!filter.includeArchived) where.push(isNull(customers.archivedAt));
   if (filter.status) where.push(eq(customers.status, filter.status));
   if (filter.kind) where.push(eq(customers[PARTNER_TYPE_FIELD[kindToType(filter.kind)]], true));
@@ -66,7 +66,7 @@ export async function listCustomerRows(filter: {
 
 export async function listContactRows(filter: { q?: string; customerId?: string; limit?: number }) {
   const access = await getAccess();
-  const where: (SQL | undefined)[] = [customerScope(access, contacts.customerId), isNull(contacts.archivedAt)];
+  const where: (SQL | undefined)[] = [contactScope(access), isNull(contacts.archivedAt)];
   if (filter.customerId) where.push(eq(contacts.customerId, filter.customerId));
   if (filter.q) {
     where.push(
@@ -159,7 +159,7 @@ export async function listProjectRows(filter: {
   limit?: number;
 }) {
   const access = await getAccess();
-  const where: (SQL | undefined)[] = [customerScope(access, projects.customerId)];
+  const where: (SQL | undefined)[] = [projectListScope(access)];
   if (filter.customerId) where.push(eq(projects.customerId, filter.customerId));
   if (filter.statuses?.length) {
     where.push(

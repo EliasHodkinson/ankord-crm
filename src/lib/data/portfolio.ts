@@ -2,7 +2,7 @@ import "server-only";
 import { and, asc, between, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { customers, projectPhases, projectSteps, projects, users } from "@/lib/db/schema";
-import { customerScope, getAccess, projectScope, type Access } from "@/lib/access";
+import { getAccess, projectListScope, projectScope, type Access } from "@/lib/access";
 import type { Portfolio, PortfolioFilters } from "@/lib/portfolio";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { APP_TIME_ZONE } from "@/lib/utils";
@@ -28,7 +28,7 @@ function sydneyDay(column: AnyPgColumn) {
  */
 function portfolioWhere(access: Access, f: PortfolioFilters): SQL | undefined {
   const filters: SQL[] = [];
-  const scope = customerScope(access, projects.customerId);
+  const scope = projectListScope(access);
   if (scope) filters.push(scope);
 
   if (f.status === "live") {
@@ -160,7 +160,7 @@ export async function listPortfolio(
 export async function listPortfolioFacets() {
   const access = await getAccess();
   const db = getDb();
-  const scope = customerScope(access, projects.customerId);
+  const scope = projectListScope(access);
   const [owners, partners] = await Promise.all([
     db
       .selectDistinct({ id: users.id, name: users.name })

@@ -6,7 +6,7 @@ import { z } from "zod";
 import { getDb } from "@/lib/db";
 import { communications, contacts } from "@/lib/db/schema";
 import { getGraphToken, requireUser } from "@/lib/auth/session";
-import { assertLinks } from "@/lib/access";
+import { assertLinks, assertSection } from "@/lib/access";
 import { resolveMailbox } from "@/lib/data/common";
 import {
   addressOf,
@@ -55,6 +55,7 @@ export async function linkEmails(
   if (!customerId && !projectId && !leadId) {
     return fail("Pick the customer, project or lead this belongs against.");
   }
+  await assertSection("inbox");
   await assertLinks({ customerId, projectId, leadId });
 
   // Your own mailbox, or a shared one an admin has listed in Settings.

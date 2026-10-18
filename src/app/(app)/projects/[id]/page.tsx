@@ -40,6 +40,7 @@ import { updateProject } from "@/lib/actions/projects";
 import { canWriteSales, requireUser } from "@/lib/auth/session";
 import { DocumentSummary } from "@/components/app/documents/document-summary";
 import { documentsForProject } from "@/lib/data/documents";
+import { getAccess, hasSection } from "@/lib/access";
 import { formatDate, money } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -88,6 +89,13 @@ export default async function ProjectPage({
   const progress = progressOf(project.steps);
   const plannerLink = await getPlannerLink(id);
   const commercials = await documentsForProject(id);
+  // Sections switched off for a restricted person are left off the page.
+  const access = await getAccess();
+  const show = {
+    commercials: hasSection(access, "sales") || hasSection(access, "purchasing"),
+    tasks: hasSection(access, "tasks"),
+    inbox: hasSection(access, "inbox"),
+  };
 
   /** The dated views need the whole page width; the ordered list does not. */
   const wide = view !== "list";
@@ -185,10 +193,12 @@ export default async function ProjectPage({
           </div>
         }
         actions={
-          <ButtonLink href={`/inbox?project=${project.id}`} variant="secondary">
-            <Mail />
-            Link email
-          </ButtonLink>
+          show.inbox ? (
+            <ButtonLink href={`/inbox?project=${project.id}`} variant="secondary">
+              <Mail />
+              Link email
+            </ButtonLink>
+          ) : null
         }
       />
 
@@ -211,11 +221,13 @@ export default async function ProjectPage({
           {wide ? null : headlineBanner}
           {wide ? null : runbookCard}
 
-          <RecordTasks
-            scope={{ projectId: project.id, customerId: project.customerId }}
-            revalidate={`/projects/${project.id}`}
-            placeholder="Chase the DNS auth code…"
-          />
+          {show.tasks ? (
+            <RecordTasks
+              scope={{ projectId: project.id, customerId: project.customerId }}
+              revalidate={`/projects/${project.id}`}
+              placeholder="Chase the DNS auth code…"
+            />
+          ) : null}
 
           <Card>
             <CardHeader
@@ -299,13 +311,15 @@ export default async function ProjectPage({
         </div>
 
         <div className="flex flex-col gap-5">
-          <DocumentSummary
-            title="Commercials"
-            documents={commercials}
-            newHref={`partner=${project.customerId}`}
-            canWrite={canWriteSales(user.role)}
-            emptyText="Quotes, orders and invoices filed against this project appear here."
-          />
+          {show.commercials ? (
+            <DocumentSummary
+              title="Commercials"
+              documents={commercials}
+              newHref={`partner=${project.customerId}`}
+              canWrite={canWriteSales(user.role)}
+              emptyText="Quotes, orders and invoices filed against this project appear here."
+            />
+          ) : null}
 
           <Card>
             <CardHeader title="Key contacts" meta="Who this depends on" />

@@ -15,6 +15,7 @@ import {
   revokeFolderGrants,
   type FolderOutcome,
 } from "@/lib/sharepoint-access";
+import { SECTIONS, SECTION_INFO } from "@/lib/sections";
 import { fail, logActivity, type ActionState } from "./shared";
 
 /**
@@ -406,6 +407,46 @@ export async function saveCustomerGrants(
   return problems
     ? { ok: false, message: `Saved in the CRM, but SharePoint did not take every change. ${problems}` }
     : { ok: true, message: "Access saved." };
+}
+
+/* ── which sections ──────────────────────────────────────────────── */
+
+/**
+ * Sets the sections of the CRM a restricted person may open. Each one ticked
+ * comes in as `section:<name>`. Saved as an explicit list, so a section added
+ * later starts switched off for anyone an admin has already narrowed.
+ */
+export async function saveSections(
+  userId: string,
+  _prev: ActionState | undefined,
+  formData: FormData,
+): Promise<ActionState> {
+  await requireAdmin();
+  const db = getDb();
+  const [person] = await db
+    .select({ name: users.name })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  if (!person) return fail("That person is no longer here.");
+
+  const chosen = SECTIONS.filter((s) => formData.get(`section:${s}`) != null);
+  await db
+    .update(users)
+    .set({ sections: chosen, updatedAt: new Date() })
+    .where(eq(users.id, userId));
+
+  await logActivity({
+    entityType: "user",
+    entityId: userId,
+    verb: "access_changed",
+    summary: chosen.length
+      ? `Set the sections ${person.name} can open: ${chosen.map((s) => SECTION_INFO[s].label).join(", ")}`
+      : `Switched off every section for ${person.name} but Overview`,
+  });
+
+  revalidatePeople(userId);
+  return { ok: true, message: "Sections saved." };
 }
 
 /** Tries a folder again after SharePoint refused — once the admin has fixed whatever it was. */

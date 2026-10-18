@@ -8,7 +8,7 @@ import {
   emailSuppressions,
   leads,
 } from "@/lib/db/schema";
-import { customerScope, type Access } from "@/lib/access";
+import { contactScope, customerScope, type Access } from "@/lib/access";
 import type { AudienceRule } from "./model";
 
 /**
@@ -56,7 +56,7 @@ export async function resolveAudience(rule: AudienceRule, access: Access): Promi
     found.set(email, { ...c, email });
   };
 
-  const scope = customerScope(access, contacts.customerId);
+  const scope = contactScope(access);
   const contactSelect = {
     contactId: contacts.id,
     customerId: customers.id,

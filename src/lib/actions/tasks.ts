@@ -8,7 +8,7 @@ import { tasks, users } from "@/lib/db/schema";
 import { notifyTeams } from "@/lib/notify";
 import { appUrl } from "@/lib/env";
 import { requireUser } from "@/lib/auth/session";
-import { assertLinks, assertTask } from "@/lib/access";
+import { assertLinks, assertSection, assertTask } from "@/lib/access";
 import {
   fail,
   fromZod,
@@ -41,6 +41,7 @@ export async function createTask(
   if (!parsed.success) return fromZod(parsed.error);
 
   const { revalidate, ...values } = parsed.data;
+  await assertSection("tasks");
   await assertLinks(values);
   const [row] = await getDb()
     .insert(tasks)
