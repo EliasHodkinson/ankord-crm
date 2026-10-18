@@ -1,7 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { count, eq, not, like, or } from "drizzle-orm";
 import { exchangeCode, isScopeSet, scopeStringFor } from "@/lib/auth/entra";
-import { createSession, verifyIdToken } from "@/lib/auth/session";
+import { createPendingMcpSession, createSession, verifyIdToken } from "@/lib/auth/session";
+import {
+  SESSION_COOKIE as MCP_SESSION_COOKIE,
+  cookieOptions as mcpCookieOptions,
+  sealSession,
+} from "@/lib/mcp/grants";
 import { getDb } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { fetchMyPhotoDataUri, fetchMyProfile } from "@/lib/graph/client";
@@ -32,6 +37,8 @@ export async function GET(request: NextRequest) {
     return failure(request, "The sign-in link expired or was tampered with. Try again.");
   }
 
+  const forMcp = request.cookies.get("ankord_purpose")?.value === "mcp";
+  let mcpSession: string | null = null;
   let userId: string;
   try {
     // The same scope sets the sign-in route asked for.
@@ -123,7 +130,12 @@ export async function GET(request: NextRequest) {
       userId = created.id;
     }
 
-    await createSession(userId, tokens);
+    if (forMcp) {
+      // Connecting an MCP client: a session of its own, no browser cookie.
+      mcpSession = await createPendingMcpSession(userId, tokens);
+    } else {
+      await createSession(userId, tokens);
+    }
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Sign-in failed for an unknown reason.";
@@ -131,6 +143,10 @@ export async function GET(request: NextRequest) {
   }
 
   const response = NextResponse.redirect(new URL(next, request.nextUrl.origin));
+  if (mcpSession) {
+    response.cookies.set(MCP_SESSION_COOKIE, await sealSession(mcpSession), mcpCookieOptions);
+  }
+  response.cookies.delete("ankord_purpose");
   response.cookies.delete("ankord_pkce");
   response.cookies.delete("ankord_state");
   response.cookies.delete("ankord_next");

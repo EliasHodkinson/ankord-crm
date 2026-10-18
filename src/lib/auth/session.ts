@@ -3,10 +3,11 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import { SignJWT, jwtVerify, createRemoteJWKSet, type JWTPayload } from "jose";
-import { and, eq, gt } from "drizzle-orm";
+import { and, eq, gt, isNotNull } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { sessions, users, type User } from "@/lib/db/schema";
 import { cookieSecret, decryptSecret, encryptSecret } from "./crypto";
+import { currentPrincipal } from "./principal";
 import {
   EntraTokenError,
   grantedScopeSets,
@@ -40,6 +41,17 @@ async function readCookie(): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * The session this request acts as: an MCP session when the MCP endpoint has
+ * verified a bearer token (see principal.ts), otherwise the browser's cookie.
+ */
+async function currentSession(): Promise<{ sid: string; kind: "web" | "mcp" } | null> {
+  const principal = currentPrincipal();
+  if (principal) return { sid: principal.sessionId, kind: "mcp" };
+  const sid = await readCookie();
+  return sid ? { sid, kind: "web" } : null;
 }
 
 /* ── id_token validation ─────────────────────────────────────────── */
@@ -76,15 +88,18 @@ export async function verifyIdToken(idToken: string): Promise<EntraClaims> {
 
 /* ── creating and ending sessions ────────────────────────────────── */
 
-export async function createSession(userId: string, tokens: TokenSet): Promise<void> {
-  const db = getDb();
+async function insertSession(
+  userId: string,
+  tokens: TokenSet,
+  kind: "web" | "mcp",
+  expiresAt: Date,
+): Promise<string> {
   const hdrs = await headers();
-  const expiresAt = new Date(Date.now() + SESSION_TTL_DAYS * 86_400_000);
-
-  const [row] = await db
+  const [row] = await getDb()
     .insert(sessions)
     .values({
       userId,
+      kind,
       accessTokenEnc: await encryptSecret(tokens.access_token),
       accessTokenExpiresAt: new Date(Date.now() + (tokens.expires_in - 60) * 1000),
       refreshTokenEnc: tokens.refresh_token
@@ -96,6 +111,12 @@ export async function createSession(userId: string, tokens: TokenSet): Promise<v
       expiresAt,
     })
     .returning({ id: sessions.id });
+  return row.id;
+}
+
+export async function createSession(userId: string, tokens: TokenSet): Promise<void> {
+  const expiresAt = new Date(Date.now() + SESSION_TTL_DAYS * 86_400_000);
+  const id = await insertSession(userId, tokens, "web", expiresAt);
 
   /**
    * SameSite=Lax, the safer default.
@@ -110,13 +131,23 @@ export async function createSession(userId: string, tokens: TokenSet): Promise<v
    * frame-ancestors in next.config.ts. Everyone has to sign in again for a new
    * cookie to take effect.
    */
-  (await cookies()).set(SESSION_COOKIE, await signCookie(row.id), {
+  (await cookies()).set(SESSION_COOKIE, await signCookie(id), {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
     expires: expiresAt,
   });
+}
+
+/**
+ * A session for an MCP client, made when someone signs in with Microsoft to
+ * connect one. It holds its own Microsoft tokens, apart from any browser
+ * session, and sets no cookie. It lasts a few minutes unless the person
+ * approves the connection (lib/mcp/grants.ts), and is deleted if they decline.
+ */
+export async function createPendingMcpSession(userId: string, tokens: TokenSet): Promise<string> {
+  return insertSession(userId, tokens, "mcp", new Date(Date.now() + 15 * 60_000));
 }
 
 export async function destroySession(): Promise<void> {
@@ -140,14 +171,23 @@ export type SessionContext = { user: User; sessionId: string };
  * components only hits the database once.
  */
 export const getSession = cache(async (): Promise<SessionContext | null> => {
-  const sid = await readCookie();
-  if (!sid) return null;
+  const current = await currentSession();
+  if (!current) return null;
 
   const rows = await getDb()
     .select({ user: users, sessionId: sessions.id })
     .from(sessions)
     .innerJoin(users, eq(users.id, sessions.userId))
-    .where(and(eq(sessions.id, sid), gt(sessions.expiresAt, new Date())))
+    .where(
+      and(
+        eq(sessions.id, current.sid),
+        // A cookie only ever names a browser session, and a bearer token only
+        // an MCP session that its person approved.
+        eq(sessions.kind, current.kind),
+        current.kind === "mcp" ? isNotNull(sessions.oauthClientId) : undefined,
+        gt(sessions.expiresAt, new Date()),
+      ),
+    )
     .limit(1);
 
   const row = rows[0];
@@ -163,7 +203,7 @@ export async function requireUser(): Promise<SessionContext> {
 
 /** The scopes Microsoft granted this session, for features that need more than sign-in. */
 export async function sessionScopes(): Promise<string | null> {
-  const sid = await readCookie();
+  const sid = (await currentSession())?.sid;
   if (!sid) return null;
   const [row] = await getDb()
     .select({ scope: sessions.scope })
@@ -222,7 +262,7 @@ export class GraphAuthError extends Error {
  * again (for example after the refresh token has been revoked).
  */
 export async function getGraphToken(): Promise<string> {
-  const sid = await readCookie();
+  const sid = (await currentSession())?.sid;
   if (!sid) throw new GraphAuthError("Not signed in.");
 
   const db = getDb();

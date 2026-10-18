@@ -415,6 +415,84 @@ their role. `CRM.Restricted` is also recognised as an app role.
 
 ---
 
+## 8. Connecting Claude (MCP)
+
+The Gangway is an MCP server at **`https://<your-domain>/mcp`** (Streamable
+HTTP), so Claude — Claude Code, Claude Desktop or claude.ai — can read and
+update it without the browser. Settings → **Claude connections** shows the
+address, and the connections each person has made.
+
+**It acts as you.** Connecting opens a browser: you sign in with Microsoft as
+usual and approve the client by name. Claude then has your role, your business
+partners (if you are restricted) and your delegated Microsoft 365 access —
+never more. Every tool goes through the same server action and the same
+`lib/access.ts` checks as the page. Everything it changes is in the activity
+log as you, marked `via: "mcp"` with the client's name (the dashboard shows
+"· via Claude").
+
+### Adding it
+
+- **claude.ai / Claude Desktop** — Settings → Connectors → **Add custom
+  connector**, paste `https://<your-domain>/mcp`, then **Connect** and sign in.
+  On a Team or Enterprise plan an owner adds it once under organisation
+  connectors; each person still connects as themselves.
+- **Claude Code**
+
+  ```bash
+  claude mcp add --transport http the-gangway https://<your-domain>/mcp
+  ```
+
+  Then run `/mcp` in Claude Code, choose `the-gangway` and authenticate. Add
+  `--scope user` to have it in every project.
+
+### What it can do
+
+| | |
+|---|---|
+| **Read** | `search`, `whoami`, `list_team`, business partners and contacts, leads (staff), projects with their runbook phases and steps, tasks, communications, sales and purchasing documents (by id or number), items (staff) |
+| **Write, inside The Gangway** | `log_communication` (times in Sydney time), `add_note`, `add_contact_detail`, `create_task`, `update_task`, `update_step` (status, blocker, assignee, due, notes, checklist), `clear_step_blocker`, `add_step`, `set_lead_stage`, `create_lead`, `update_lead`, `confirm_sales_order` |
+| **Write, reaching Xero** | `create_quote` (a DRAFT in Xero), `create_sales_order` (a note on the quote it converts), `add_po_shipment` (a note on the Xero PO), `receive_goods` (a note on the Xero PO), `import_from_xero` (reads Xero, writes here) |
+
+The Xero tools are marked as reaching outside, and say so, so the client asks
+before calling them. Nothing deletes, and nothing sends mail.
+
+### How it works
+
+The Gangway is its own small OAuth 2.1 authorization server for MCP (issuer =
+`APP_URL`), because Entra cannot issue tokens to an MCP client it has never
+heard of, and Graph tokens must never be handed to one:
+
+1. Claude finds `/.well-known/oauth-protected-resource/mcp` from the 401, then
+   `/.well-known/oauth-authorization-server`.
+2. It identifies itself with a Client ID Metadata Document URL, or registers at
+   `/oauth/register` (any client may — the consent screen names it and where it
+   returns to).
+3. `/oauth/authorize` sends the person through the ordinary Microsoft sign-in
+   (same `/api/auth/callback` redirect URI), which makes a **separate session**
+   with that person's own Microsoft tokens, then `/oauth/consent`.
+4. `/oauth/token` swaps the code (PKCE S256 required) for a one-hour access
+   token, audience-bound to `/mcp`, and a rotating refresh token.
+
+Each connection is a row in `sessions` (`kind = 'mcp'`), so ending it in
+Settings, suspending the person, or `/oauth/revoke` stops it on the next
+request. An unused connection lapses after 90 days. No secret is stored in
+plain text: codes and refresh tokens are kept as hashes, Microsoft tokens are
+encrypted with `APP_ENCRYPTION_KEY` as before, and access tokens are signed
+with a key derived from it. Rotating `APP_ENCRYPTION_KEY` ends every
+connection along with every sign-in.
+
+**Deploying it needs** migration `0017_mcp_connections` (additive), and
+nothing new in Entra or the environment. `APP_URL` must be the public origin:
+it is the issuer and the resource clients are given tokens for.
+
+**Checking it** against a running dev server on a test branch:
+`npx tsx scripts/mcp-check.ts` — discovery, registration, the authorize
+redirect, PKCE, refresh rotation, code reuse, revocation, and a restricted
+person failing to reach another partner while staff can. It refuses to run
+against production.
+
+---
+
 ## Layout
 
 ```
@@ -431,6 +509,7 @@ src/
       documents/    the one list, detail and editor every sales document uses
   lib/
     auth/           Entra OIDC, sessions, token encryption
+    mcp/            the MCP server: OAuth for clients, the endpoint, its tools
     db/             Drizzle schema and client
     graph/          Microsoft Graph — mail, SharePoint, To Do and Planner
     planner/        the Planner mapping and two-way sync

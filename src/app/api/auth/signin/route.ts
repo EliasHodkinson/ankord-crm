@@ -28,12 +28,17 @@ export async function GET(request: NextRequest) {
   // Entra only issues what has been consented, and the CRM's own checks still
   // decide who may use what.
   const asked = request.nextUrl.searchParams.get("scopes");
-  const sets = [
-    ...new Set([
-      ...grantedScopeSets(await sessionScopes().catch(() => null)),
-      ...(isScopeSet(asked) ? [asked] : []),
-    ]),
-  ];
+  // Connecting an MCP client (see lib/mcp/grants.ts): the sign-in makes that
+  // connection its own session, with only the ordinary scopes.
+  const forMcp = request.nextUrl.searchParams.get("purpose") === "mcp";
+  const sets = forMcp
+    ? []
+    : [
+        ...new Set([
+          ...grantedScopeSets(await sessionScopes().catch(() => null)),
+          ...(isScopeSet(asked) ? [asked] : []),
+        ]),
+      ];
 
   const target = buildAuthorizeUrl({
     state,
@@ -64,5 +69,7 @@ export async function GET(request: NextRequest) {
   );
   if (sets.length) response.cookies.set("ankord_scopes", sets.join(","), options);
   else response.cookies.delete("ankord_scopes");
+  if (forMcp) response.cookies.set("ankord_purpose", "mcp", options);
+  else response.cookies.delete("ankord_purpose");
   return response;
 }

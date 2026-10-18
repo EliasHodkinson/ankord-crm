@@ -33,6 +33,18 @@
         "3010"
       ],
       "port": 3010
+    },
+    {
+      "name": "ankord-crm-mcp",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "-p",
+        "3110"
+      ],
+      "port": 3110
     }
   ]
 }

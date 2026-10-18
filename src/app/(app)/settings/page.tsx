@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { asc } from "drizzle-orm";
-import { CheckCircle2, CircleAlert, ShieldCheck, UsersRound } from "lucide-react";
+import { CheckCircle2, CircleAlert, PlugZap, ShieldCheck, UsersRound } from "lucide-react";
 import { PageBody, PageHeader } from "@/components/app/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { DataRow } from "@/components/ui/field";
@@ -300,6 +300,19 @@ export default async function SettingsPage({
             </CardBody>
           </Card>
         ) : null}
+
+        <Card>
+          <CardHeader
+            title="Claude connections"
+            meta="Let Claude read and update The Gangway as you, with your access"
+            action={
+              <ButtonLink href="/settings/connections" variant="secondary" size="sm">
+                <PlugZap />
+                Claude connections
+              </ButtonLink>
+            }
+          />
+        </Card>
 
         <Card>
           <CardHeader
