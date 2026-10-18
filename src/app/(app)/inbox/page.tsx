@@ -9,6 +9,7 @@ import { MessagePicker, type PickableMessage } from "./message-picker";
 import { getDb } from "@/lib/db";
 import { communications, contacts, customers, leads, projects } from "@/lib/db/schema";
 import { getGraphToken, requireUser } from "@/lib/auth/session";
+import { canSeeCustomer, customerScope, getAccess } from "@/lib/access";
 import {
   addressOf,
   cleanText,
@@ -31,23 +32,40 @@ export default async function InboxPage({
   searchParams: Promise<{ q?: string; customer?: string; project?: string; lead?: string }>;
 }) {
   await requireUser();
+  const access = await getAccess();
   const { q, customer, project, lead } = await searchParams;
   const db = getDb();
 
+  // Only records this person may file against. A restricted person gets no
+  // leads at all, and only their own partners and those partners' projects.
   const [customerList, projectList, leadList] = await Promise.all([
-    db.select({ id: customers.id, name: customers.name }).from(customers).orderBy(asc(customers.name)),
+    db
+      .select({ id: customers.id, name: customers.name })
+      .from(customers)
+      .where(customerScope(access, customers.id))
+      .orderBy(asc(customers.name)),
     db
       .select({ id: projects.id, name: projects.name, customerId: projects.customerId })
       .from(projects)
+      .where(customerScope(access, projects.customerId))
       .orderBy(asc(projects.name)),
-    db.select({ id: leads.id, name: leads.companyName }).from(leads).orderBy(asc(leads.companyName)),
+    access.restricted
+      ? Promise.resolve([])
+      : db
+          .select({ id: leads.id, name: leads.companyName })
+          .from(leads)
+          .orderBy(asc(leads.companyName)),
   ]);
 
   // With a customer in context, seed the search from the addresses we know.
   let seedAddresses: string[] = [];
   let contextLabel: string | null = null;
 
-  const contextCustomerId = customer ?? projectList.find((p) => p.id === project)?.customerId;
+  const requested = customer ?? projectList.find((p) => p.id === project)?.customerId;
+  // A customer named in the URL is only used if it is one they may see —
+  // otherwise its name and its people's addresses would leak into the page.
+  const contextCustomerId =
+    requested && (await canSeeCustomer(requested)) ? requested : undefined;
 
   if (contextCustomerId) {
     const [row] = await db
@@ -64,7 +82,7 @@ export default async function InboxPage({
     seedAddresses = [row?.email, ...people.map((p) => p.email)].filter(
       (a): a is string => Boolean(a),
     );
-  } else if (lead) {
+  } else if (lead && !access.restricted) {
     const [row] = await db
       .select({ name: leads.companyName, email: leads.email })
       .from(leads)

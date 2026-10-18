@@ -7,6 +7,7 @@ import { z } from "zod";
 import { getDb } from "@/lib/db";
 import { customers, contacts, leads } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth/session";
+import { assertStaff } from "@/lib/access";
 import { autoProvisionFolder } from "./files";
 import { notifyTeams } from "@/lib/notify";
 import { appUrl } from "@/lib/env";
@@ -68,11 +69,18 @@ function parse(formData: FormData) {
   return leadSchema.safeParse(Object.fromEntries(formData));
 }
 
+/*
+ * Leads are a staff-only area. There is no per-lead grant — a restricted
+ * person is given business partners, never prospects — so every action here
+ * refuses them outright.
+ */
+
 export async function createLead(
   _prev: ActionState | undefined,
   formData: FormData,
 ): Promise<ActionState> {
   const { user } = await requireUser();
+  await assertStaff();
   const parsed = parse(formData);
   if (!parsed.success) return fromZod(parsed.error);
 
@@ -108,6 +116,7 @@ export async function updateLead(
   formData: FormData,
 ): Promise<ActionState> {
   await requireUser();
+  await assertStaff();
   const parsed = parse(formData);
   if (!parsed.success) return fromZod(parsed.error);
 
@@ -155,6 +164,7 @@ async function notifyLeadProposal(
 /** Stage moves happen constantly, so they get their own one-click path. */
 export async function setLeadStage(id: string, stage: string): Promise<ActionState> {
   await requireUser();
+  await assertStaff();
   const value = z.enum(STAGES).safeParse(stage);
   if (!value.success) return fail("Unknown stage.");
 
@@ -197,6 +207,7 @@ export async function setLeadStage(id: string, stage: string): Promise<ActionSta
  */
 export async function convertLead(id: string): Promise<void> {
   const { user } = await requireUser();
+  await assertStaff();
   const db = getDb();
 
   const [lead] = await db.select().from(leads).where(eq(leads.id, id)).limit(1);
@@ -260,6 +271,7 @@ export async function convertLead(id: string): Promise<void> {
 
 export async function deleteLead(id: string): Promise<void> {
   await requireUser();
+  await assertStaff();
   await getDb().delete(leads).where(eq(leads.id, id));
   revalidatePath("/leads");
   redirect("/leads");
@@ -276,6 +288,7 @@ export async function moveLeadOnBoard(
   beforeId: string | null,
 ): Promise<ActionState> {
   await requireUser();
+  await assertStaff();
   const parsed = z.enum(STAGES).safeParse(stage);
   if (!parsed.success) return fail("Unknown stage.");
 

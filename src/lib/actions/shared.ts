@@ -10,6 +10,8 @@ export type ActionState = {
   ok: boolean;
   message?: string;
   fieldErrors?: Record<string, string[]>;
+  /** Anything else worth showing after a success — an invitation link, an id. */
+  data?: Record<string, string>;
 };
 
 export const OK: ActionState = { ok: true };

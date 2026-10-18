@@ -5,6 +5,8 @@ import { eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { customers, leads, projects } from "@/lib/db/schema";
 import { getGraphToken, requireUser } from "@/lib/auth/session";
+import { assertCustomer, assertProject, assertStaff } from "@/lib/access";
+import { applyGrantsForCustomerFolder } from "@/lib/sharepoint-access";
 import { getSettings } from "@/lib/data/common";
 import { ensureChildFolders, ensureFolderPath } from "@/lib/graph/sharepoint";
 import { parseFolderTemplate } from "@/lib/folder-template";
@@ -21,7 +23,11 @@ import { fail, logActivity, type ActionState } from "./shared";
 export async function provisionFolder(
   scope: { customerId: string } | { projectId: string } | { leadId: string },
 ): Promise<ActionState> {
-  await requireUser();
+  const { user } = await requireUser();
+  if ("customerId" in scope) await assertCustomer(scope.customerId);
+  else if ("projectId" in scope) await assertProject(scope.projectId);
+  else await assertStaff();
+
   const db = getDb();
   const settings = await getSettings();
 
@@ -85,6 +91,24 @@ export async function provisionFolder(
           customerId: customer.id,
           verb: "files_incomplete",
           summary: `Could not create ${structure.failed.join(", ")} in SharePoint — use "Check folder structure" to finish`,
+        });
+      }
+
+      // Anyone already granted this partner gets the folder now it exists.
+      // Best-effort: whoever created the folder may not be allowed to share
+      // it, and a refusal is recorded for an admin to retry from Settings.
+      const shared = await applyGrantsForCustomerFolder({
+        actorId: user.id,
+        customerId: customer.id,
+        token,
+      }).catch(() => []);
+      if (shared.some((s) => s.status === "failed")) {
+        await logActivity({
+          entityType: "customer",
+          entityId: customer.id,
+          customerId: customer.id,
+          verb: "files_access_incomplete",
+          summary: "Could not share the new folder with everyone granted this partner — an admin can retry in Settings → People and access",
         });
       }
 

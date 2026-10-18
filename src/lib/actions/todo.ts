@@ -5,6 +5,7 @@ import { and, eq, isNotNull, ne } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { tasks } from "@/lib/db/schema";
 import { getGraphToken, requireUser, GraphAuthError } from "@/lib/auth/session";
+import { getAccess, taskScope } from "@/lib/access";
 import {
   completeTodoTask,
   createTodoTask,
@@ -62,10 +63,12 @@ export async function syncMyTodo(): Promise<SyncResult> {
 
   try {
     const listId = await ensureCrmList(token);
+    // Only what they may see: a restricted person assigned a follow-up on a
+    // record outside their grants does not get its title in To Do either.
     const mine = await db
       .select()
       .from(tasks)
-      .where(eq(tasks.assigneeId, user.id));
+      .where(and(eq(tasks.assigneeId, user.id), taskScope(await getAccess())));
 
     const remote = await listTodoTasks(token, listId);
     const remoteById = new Map(remote.map((t) => [t.id, t]));

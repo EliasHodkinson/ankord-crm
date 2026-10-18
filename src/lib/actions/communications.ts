@@ -6,6 +6,7 @@ import { z } from "zod";
 import { getDb } from "@/lib/db";
 import { communications, tasks } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth/session";
+import { assertCommunication, assertLinks } from "@/lib/access";
 import {
   fail,
   fromZod,
@@ -46,6 +47,7 @@ export async function logCommunication(
   if (!parsed.success) return fromZod(parsed.error);
 
   const { redirectTo, body, followUpTitle, followUpDate, ...values } = parsed.data;
+  await assertLinks(values);
 
   const [row] = await getDb()
     .insert(communications)
@@ -102,6 +104,7 @@ export async function deleteCommunication(
   redirectTo: string,
 ): Promise<ActionState> {
   const { user } = await requireUser();
+  await assertCommunication(id);
   const db = getDb();
 
   const [row] = await db

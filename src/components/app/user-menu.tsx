@@ -12,11 +12,13 @@ export function UserMenu({
   email,
   photo,
   role,
+  showSettings = true,
 }: {
   name: string;
   email: string;
   photo: string | null;
   role: string;
+  showSettings?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const wrapper = useRef<HTMLDivElement>(null);
@@ -83,9 +85,11 @@ export function UserMenu({
             <ThemeToggle />
           </div>
 
-          <MenuLink href="/settings" icon={Settings}>
-            Settings
-          </MenuLink>
+          {showSettings ? (
+            <MenuLink href="/settings" icon={Settings}>
+              Settings
+            </MenuLink>
+          ) : null}
           <a
             href="/api/auth/signout?full=1"
             role="menuitem"

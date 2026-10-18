@@ -8,7 +8,9 @@ import { getDb } from "@/lib/db";
 import { sessions, users, type User } from "@/lib/db/schema";
 import { cookieSecret, decryptSecret, encryptSecret } from "./crypto";
 import {
+  ACCESS_ADMIN_SCOPE_STRING,
   EntraTokenError,
+  hasAccessAdminScopes,
   issuer,
   jwksUrl,
   refreshTokens,
@@ -55,6 +57,8 @@ export type EntraClaims = JWTPayload & {
    * entirely until app roles are configured in Entra — see lib/roles.ts.
    */
   roles?: string[];
+  /** Present when the person signed in through another identity provider — a guest. */
+  idp?: string;
 };
 
 export async function verifyIdToken(idToken: string): Promise<EntraClaims> {
@@ -157,6 +161,18 @@ export async function requireUser(): Promise<SessionContext> {
   return session;
 }
 
+/** The scopes Microsoft granted this session, for features that need more than sign-in. */
+export async function sessionScopes(): Promise<string | null> {
+  const sid = await readCookie();
+  if (!sid) return null;
+  const [row] = await getDb()
+    .select({ scope: sessions.scope })
+    .from(sessions)
+    .where(eq(sessions.id, sid))
+    .limit(1);
+  return row?.scope ?? null;
+}
+
 export async function requireAdmin(): Promise<SessionContext> {
   const session = await requireUser();
   if (session.user.role !== "admin") redirect("/?denied=admin");
@@ -198,7 +214,12 @@ export async function getGraphToken(): Promise<string> {
 
   let tokens: TokenSet;
   try {
-    tokens = await refreshTokens(await decryptSecret(row.refreshTokenEnc));
+    // Keep an admin's people-management scopes across a refresh; everyone else
+    // refreshes with the ordinary set.
+    tokens = await refreshTokens(
+      await decryptSecret(row.refreshTokenEnc),
+      hasAccessAdminScopes(row.scope) ? ACCESS_ADMIN_SCOPE_STRING : undefined,
+    );
   } catch (error) {
     if (error instanceof EntraTokenError) {
       throw new GraphAuthError(

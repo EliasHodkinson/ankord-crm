@@ -3,6 +3,7 @@ import { and, desc, eq, or } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { communications } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth/session";
+import { getAccess, linkedScope } from "@/lib/access";
 
 export type TimelineScope = {
   customerId?: string;
@@ -15,6 +16,7 @@ export type TimelineScope = {
 /** Timeline rows the current user is allowed to see, newest first. */
 export async function listCommunications(scope: TimelineScope) {
   const { user } = await requireUser();
+  const access = await getAccess();
 
   const targets = [];
   if (scope.customerId) targets.push(eq(communications.customerId, scope.customerId));
@@ -28,6 +30,10 @@ export async function listCommunications(scope: TimelineScope) {
       or(...targets)!,
       // Private entries stay with the person who logged them.
       or(eq(communications.visibility, "team"), eq(communications.loggedById, user.id))!,
+      linkedScope(access, {
+        customerId: communications.customerId,
+        projectId: communications.projectId,
+      }),
     ),
     orderBy: [desc(communications.occurredAt)],
     limit: scope.limit ?? 60,

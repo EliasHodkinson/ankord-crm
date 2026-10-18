@@ -6,6 +6,7 @@ import { z } from "zod";
 import { getDb } from "@/lib/db";
 import { savedViews } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth/session";
+import { AccessDenied, getAccess } from "@/lib/access";
 import { fail, fromZod, type ActionState } from "./shared";
 
 const ENTITIES = ["leads", "customers", "projects", "contacts"] as const;
@@ -25,6 +26,14 @@ export async function saveView(
   const { user } = await requireUser();
   const parsed = viewSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return fromZod(parsed.error);
+
+  // A restricted person keeps their views to themselves, and has no lead list
+  // to save a view of.
+  const access = await getAccess();
+  if (access.restricted) {
+    if (parsed.data.entity === "leads") throw new AccessDenied();
+    parsed.data.isShared = false;
+  }
 
   const db = getDb();
   const [{ next }] = await db

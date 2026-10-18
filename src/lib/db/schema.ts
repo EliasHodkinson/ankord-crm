@@ -17,7 +17,12 @@ import { DEFAULT_CLIENT_FOLDER_TEXT } from "../folder-template";
 
 /* ───────────────────────── enums ───────────────────────── */
 
-export const userRoleEnum = pgEnum("user_role", ["admin", "member", "viewer"]);
+/**
+ * `restricted` sees nothing by default — only the business partners granted to
+ * them in customer_grants, and everything hanging off those. Used for VAs and
+ * other people who should not see the whole book. See lib/access.ts.
+ */
+export const userRoleEnum = pgEnum("user_role", ["admin", "member", "viewer", "restricted"]);
 
 /**
  * Where a person's role came from. `entra` means the last sign-in carried an
@@ -111,6 +116,11 @@ export const users = pgTable(
     /** A cache of the last Entra app-role claim — see roleSourceEnum. */
     roleSource: roleSourceEnum("role_source").notNull().default("manual"),
     isActive: boolean("is_active").notNull().default(true),
+    /** An Entra B2B guest — someone from outside Ankor'd, without a licence. */
+    isGuest: boolean("is_guest").notNull().default(false),
+    /** Set when an admin added this person from Settings, before they signed in. */
+    invitedById: uuid("invited_by_id"),
+    invitedAt: timestamp("invited_at", { withTimezone: true }),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -674,6 +684,80 @@ export const savedViews = pgTable(
   (t) => [index("saved_views_entity_idx").on(t.entity, t.position)],
 );
 
+/* ───────────────────────── access ───────────────────────── */
+
+export const fileAccessEnum = pgEnum("file_access", ["read", "write"]);
+
+/**
+ * Which business partners a restricted person may see. Granting a customer
+ * grants everything hanging off it: its contacts, projects, communications,
+ * follow-ups and SharePoint folder. Staff and admins do not need rows here.
+ */
+export const customerGrants = pgTable(
+  "customer_grants",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    customerId: uuid("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "cascade" }),
+    /** What they get on the customer's SharePoint folder. */
+    fileAccess: fileAccessEnum("file_access").notNull().default("write"),
+    grantedById: uuid("granted_by_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("customer_grants_user_customer_idx").on(t.userId, t.customerId),
+    index("customer_grants_customer_idx").on(t.customerId),
+  ],
+);
+
+export const spGrantStatusEnum = pgEnum("sp_grant_status", [
+  /** The app added this permission, and it is still there as far as we know. */
+  "applied",
+  /** They already had a direct permission. The app did not add it and will not remove it. */
+  "preexisting",
+  /** Graph refused. `error` says why; Settings offers a retry. */
+  "failed",
+  /** Removed by the app. */
+  "revoked",
+  /** The app tried to remove it and Graph refused — it may still be in place. */
+  "revoke_failed",
+]);
+
+/**
+ * A ledger of every SharePoint permission the CRM has changed, so revoking
+ * removes exactly what the CRM added and nothing a person set up by hand.
+ * Rows are kept after revocation as the audit trail.
+ */
+export const sharepointGrants = pgTable(
+  "sharepoint_grants",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    customerId: uuid("customer_id").references(() => customers.id, { onDelete: "set null" }),
+    driveId: text("drive_id").notNull(),
+    itemId: text("item_id").notNull(),
+    /** The Graph permission id the invite returned. Null unless status is applied. */
+    permissionId: text("permission_id"),
+    role: fileAccessEnum("role").notNull(),
+    status: spGrantStatusEnum("status").notNull(),
+    error: text("error"),
+    appliedById: uuid("applied_by_id").references(() => users.id, { onDelete: "set null" }),
+    appliedAt: timestamp("applied_at", { withTimezone: true }).notNull().defaultNow(),
+    revokedById: uuid("revoked_by_id").references(() => users.id, { onDelete: "set null" }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("sharepoint_grants_user_idx").on(t.userId, t.customerId),
+    index("sharepoint_grants_item_idx").on(t.driveId, t.itemId),
+  ],
+);
+
 /* ───────────────────────── org settings ───────────────────────── */
 
 /** Single-row table holding the tenant-wide configuration. */
@@ -740,6 +824,12 @@ export const xeroConnection = pgTable("xero_connection", {
 export const usersRelations = relations(users, ({ many }) => ({
   ownedCustomers: many(customers),
   sessions: many(sessions),
+  customerGrants: many(customerGrants),
+}));
+
+export const customerGrantsRelations = relations(customerGrants, ({ one }) => ({
+  user: one(users, { fields: [customerGrants.userId], references: [users.id] }),
+  customer: one(customers, { fields: [customerGrants.customerId], references: [customers.id] }),
 }));
 
 export const sessionsRelations = relations(sessions, ({ one }) => ({
@@ -850,3 +940,5 @@ export type Task = typeof tasks.$inferSelect;
 export type Activity = typeof activity.$inferSelect;
 export type SavedView = typeof savedViews.$inferSelect;
 export type Settings = typeof settings.$inferSelect;
+export type CustomerGrant = typeof customerGrants.$inferSelect;
+export type SharepointGrant = typeof sharepointGrants.$inferSelect;

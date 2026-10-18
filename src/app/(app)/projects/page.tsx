@@ -14,6 +14,7 @@ import { getDb } from "@/lib/db";
 import { customers, projectSteps, projects, users } from "@/lib/db/schema";
 import { formatDate } from "@/lib/utils";
 import { requireUser } from "@/lib/auth/session";
+import { customerScope, getAccess } from "@/lib/access";
 
 export const metadata: Metadata = { title: "Projects" };
 export const dynamic = "force-dynamic";
@@ -24,10 +25,13 @@ export default async function ProjectsPage({
   searchParams: Promise<{ status?: string; q?: string }>;
 }) {
   await requireUser();
+  const access = await getAccess();
   const { status, q } = await searchParams;
   const db = getDb();
 
   const filters: SQL[] = [];
+  const scope = customerScope(access, projects.customerId);
+  if (scope) filters.push(scope);
   if (status && status !== "all" && status !== "live") {
     filters.push(eq(projects.status, status as "active"));
   }

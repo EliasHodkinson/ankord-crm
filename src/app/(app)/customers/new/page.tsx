@@ -4,11 +4,14 @@ import { CustomerForm } from "../customer-form";
 import { createCustomer } from "@/lib/actions/customers";
 import { listTeam } from "@/lib/data/common";
 import { requireUser } from "@/lib/auth/session";
+import { requireStaffPage } from "@/lib/access";
 
 export const metadata: Metadata = { title: "New Business Partner" };
 
 export default async function NewCustomerPage() {
   await requireUser();
+  // Staff only — a restricted person has no way in, not just no link.
+  await requireStaffPage();
   const team = await listTeam();
 
   return (

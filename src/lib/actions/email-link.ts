@@ -6,6 +6,7 @@ import { z } from "zod";
 import { getDb } from "@/lib/db";
 import { communications, contacts } from "@/lib/db/schema";
 import { getGraphToken, requireUser } from "@/lib/auth/session";
+import { assertLinks } from "@/lib/access";
 import {
   addressOf,
   cleanText,
@@ -53,6 +54,7 @@ export async function linkEmails(
   if (!customerId && !projectId && !leadId) {
     return fail("Pick the customer, project or lead this belongs against.");
   }
+  await assertLinks({ customerId, projectId, leadId });
 
   const ids = parsed.data.messageIds.split(" ").filter(Boolean);
   const db = getDb();

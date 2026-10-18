@@ -1,10 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/lib/db";
-import { settings, users } from "@/lib/db/schema";
+import { settings } from "@/lib/db/schema";
 import { requireAdmin } from "@/lib/auth/session";
 import { disconnectXero } from "@/lib/xero/auth";
 import {
@@ -71,57 +70,6 @@ export async function saveLibrary(
 
   revalidatePath("/settings");
   return { ok: true, message: "SharePoint library saved." };
-}
-
-const roleSchema = z.enum(["admin", "member", "viewer"]);
-
-export async function setUserRole(userId: string, role: string): Promise<ActionState> {
-  const { user } = await requireAdmin();
-  const parsed = roleSchema.safeParse(role);
-  if (!parsed.success) return fail("Unknown role.");
-
-  if (userId === user.id && parsed.data !== "admin") {
-    return fail("You can't remove your own admin access — ask another admin to do it.");
-  }
-
-  const db = getDb();
-
-  // Entra wins where it is in play. Writing here would be silently reverted at
-  // the person's next sign-in, so refuse and say where the real switch is.
-  const [target] = await db
-    .select({ roleSource: users.roleSource })
-    .from(users)
-    .where(eq(users.id, userId))
-    .limit(1);
-
-  if (target?.roleSource === "entra") {
-    return fail(
-      "This person's access is managed in Entra. Change their app role assignment there — a change made here would be overwritten at their next sign-in.",
-    );
-  }
-
-  await db
-    .update(users)
-    .set({ role: parsed.data, updatedAt: new Date() })
-    .where(eq(users.id, userId));
-
-  revalidatePath("/settings");
-  return { ok: true, message: "Role updated." };
-}
-
-export async function setUserActive(userId: string, isActive: boolean): Promise<ActionState> {
-  const { user } = await requireAdmin();
-  if (userId === user.id && !isActive) {
-    return fail("You can't switch off your own access.");
-  }
-
-  await getDb()
-    .update(users)
-    .set({ isActive, updatedAt: new Date() })
-    .where(eq(users.id, userId));
-
-  revalidatePath("/settings");
-  return { ok: true };
 }
 
 /** Drops the Xero connection. Admin-only, like connecting it. */

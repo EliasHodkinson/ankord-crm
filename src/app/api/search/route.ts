@@ -1,8 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { ilike, or, sql } from "drizzle-orm";
+import { and, ilike, or, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { contacts, customers, leads, projects } from "@/lib/db/schema";
+import { customerScope, getAccess } from "@/lib/access";
 
 export const dynamic = "force-dynamic";
 
@@ -24,12 +25,20 @@ export async function GET(request: NextRequest) {
 
   const db = getDb();
   const like = `%${q}%`;
+  // Search is a list like any other: a restricted person finds only their own
+  // partners and what hangs off them, and never a lead.
+  const access = await getAccess();
 
   const [customerHits, contactHits, leadHits, projectHits] = await Promise.all([
     db
       .select({ id: customers.id, name: customers.name, suburb: customers.suburb })
       .from(customers)
-      .where(or(ilike(customers.name, like), ilike(customers.legalName, like)))
+      .where(
+        and(
+          or(ilike(customers.name, like), ilike(customers.legalName, like)),
+          customerScope(access, customers.id),
+        ),
+      )
       .limit(5),
     db
       .select({
@@ -43,23 +52,33 @@ export async function GET(request: NextRequest) {
       .from(contacts)
       .innerJoin(customers, sql`${customers.id} = ${contacts.customerId}`)
       .where(
-        or(
-          ilike(contacts.firstName, like),
-          ilike(contacts.lastName, like),
-          ilike(contacts.email, like),
+        and(
+          or(
+            ilike(contacts.firstName, like),
+            ilike(contacts.lastName, like),
+            ilike(contacts.email, like),
+          ),
+          customerScope(access, contacts.customerId),
         ),
       )
       .limit(5),
-    db
-      .select({ id: leads.id, name: leads.companyName, contact: leads.contactName })
-      .from(leads)
-      .where(or(ilike(leads.companyName, like), ilike(leads.contactName, like)))
-      .limit(5),
+    access.restricted
+      ? Promise.resolve([])
+      : db
+          .select({ id: leads.id, name: leads.companyName, contact: leads.contactName })
+          .from(leads)
+          .where(or(ilike(leads.companyName, like), ilike(leads.contactName, like)))
+          .limit(5),
     db
       .select({ id: projects.id, name: projects.name, company: customers.name })
       .from(projects)
       .innerJoin(customers, sql`${customers.id} = ${projects.customerId}`)
-      .where(or(ilike(projects.name, like), ilike(projects.code, like)))
+      .where(
+        and(
+          or(ilike(projects.name, like), ilike(projects.code, like)),
+          customerScope(access, projects.customerId),
+        ),
+      )
       .limit(5),
   ]);
 

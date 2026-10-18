@@ -6,6 +6,7 @@ import { z } from "zod";
 import { getDb } from "@/lib/db";
 import { projectAccounts } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth/session";
+import { assertAccount, assertLinks, assertStaff } from "@/lib/access";
 import {
   fromZod,
   logActivity,
@@ -48,6 +49,10 @@ export async function saveAccount(
   if (!parsed.success) return fromZod(parsed.error);
 
   const { revalidate, costAud, ...values } = parsed.data;
+  if (id) await assertAccount(id);
+  await assertLinks(values);
+  // An entry against nothing would be invisible to a restricted person anyway.
+  if (!values.customerId && !values.projectId) await assertStaff();
   const row = { ...values, costAud: costAud?.toString() ?? null };
   const db = getDb();
 
@@ -75,6 +80,7 @@ export async function saveAccount(
 
 export async function deleteAccount(id: string, revalidate: string): Promise<void> {
   await requireUser();
+  await assertAccount(id);
   await getDb().delete(projectAccounts).where(eq(projectAccounts.id, id));
   revalidatePath(revalidate);
 }

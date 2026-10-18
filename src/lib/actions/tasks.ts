@@ -8,6 +8,7 @@ import { tasks, users } from "@/lib/db/schema";
 import { notifyTeams } from "@/lib/notify";
 import { appUrl } from "@/lib/env";
 import { requireUser } from "@/lib/auth/session";
+import { assertLinks, assertTask } from "@/lib/access";
 import {
   fail,
   fromZod,
@@ -40,6 +41,7 @@ export async function createTask(
   if (!parsed.success) return fromZod(parsed.error);
 
   const { revalidate, ...values } = parsed.data;
+  await assertLinks(values);
   const [row] = await getDb()
     .insert(tasks)
     .values({
@@ -149,6 +151,7 @@ export async function updateTask(
   revalidate = "/tasks",
 ): Promise<ActionState> {
   await requireUser();
+  await assertTask(id);
   const parsed = editSchema.safeParse(values);
   if (!parsed.success) return fromZod(parsed.error);
 
@@ -168,6 +171,7 @@ export async function setTaskStatus(
   revalidate = "/tasks",
 ): Promise<ActionState> {
   await requireUser();
+  await assertTask(id);
   await getDb()
     .update(tasks)
     .set({
@@ -189,6 +193,7 @@ export async function snoozeTask(
   revalidate = "/tasks",
 ): Promise<ActionState> {
   await requireUser();
+  await assertTask(id);
   const parsed = z.number().int().min(1).max(365).safeParse(days);
   if (!parsed.success) return fail("That is not a sensible number of days.");
 
@@ -207,6 +212,7 @@ export async function snoozeTask(
 
 export async function deleteTask(id: string, revalidate = "/tasks"): Promise<ActionState> {
   const { user } = await requireUser();
+  await assertTask(id);
   const db = getDb();
 
   const [row] = await db

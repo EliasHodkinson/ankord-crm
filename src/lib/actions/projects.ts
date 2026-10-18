@@ -7,6 +7,15 @@ import { z } from "zod";
 import { getDb } from "@/lib/db";
 import { projectContacts, projectPhases, projectSteps, projects } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth/session";
+import {
+  AccessDenied,
+  assertContact,
+  assertCustomer,
+  assertKeyContact,
+  assertPhase,
+  assertProject,
+  assertStep,
+} from "@/lib/access";
 import { findTemplate } from "@/lib/templates";
 import { autoProvisionFolder } from "./files";
 import { notifyTeams } from "@/lib/notify";
@@ -49,6 +58,7 @@ export async function createProject(
   const { user } = await requireUser();
   const parsed = projectSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return fromZod(parsed.error);
+  await assertCustomer(parsed.data.customerId);
 
   const templateKey = String(formData.get("templateKey") ?? "blank");
   const template = findTemplate(templateKey);
@@ -123,6 +133,10 @@ export async function updateProject(
   await requireUser();
   const parsed = projectSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return fromZod(parsed.error);
+  // The project as it is, and the partner it is being saved against — so a
+  // project cannot be moved to, or from, a customer outside someone's grants.
+  await assertProject(id);
+  await assertCustomer(parsed.data.customerId);
 
   const db = getDb();
   const [before] = await db
@@ -183,6 +197,8 @@ export async function setStepStatus(
   const { user } = await requireUser();
   const parsed = z.enum(STEP_STATUSES).safeParse(status);
   if (!parsed.success) return fail("Unknown status.");
+  // The step's own project, not the one the caller named.
+  projectId = await assertStep(stepId);
 
   const done = parsed.data === "done";
   await getDb()
@@ -218,10 +234,12 @@ export async function updateStepDetail(
   const parsed = stepDetailSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return fromZod(parsed.error);
 
-  const { projectId, ...values } = parsed.data;
+  // The step's own project, not the one the form named.
+  const { notes, assigneeId, dueDate, blockedOn } = parsed.data;
+  const projectId = await assertStep(stepId);
   await getDb()
     .update(projectSteps)
-    .set({ ...values, updatedAt: new Date() })
+    .set({ notes, assigneeId, dueDate, blockedOn, updatedAt: new Date() })
     .where(eq(projectSteps.id, stepId));
 
   revalidatePath(`/projects/${projectId}`);
@@ -244,6 +262,7 @@ export async function addStep(
   await requireUser();
   const parsed = newStepSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return fromZod(parsed.error);
+  await assertPhase(parsed.data.phaseId, parsed.data.projectId);
 
   const db = getDb();
   const [{ next }] = await db
@@ -259,6 +278,7 @@ export async function addStep(
 
 export async function deleteStep(stepId: string, projectId: string): Promise<void> {
   await requireUser();
+  projectId = await assertStep(stepId);
   await getDb().delete(projectSteps).where(eq(projectSteps.id, stepId));
   revalidatePath(`/projects/${projectId}`);
 }
@@ -277,6 +297,7 @@ export async function addPhase(
   await requireUser();
   const parsed = phaseSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return fromZod(parsed.error);
+  await assertProject(parsed.data.projectId);
 
   const db = getDb();
   const [{ next }] = await db
@@ -312,6 +333,9 @@ export async function saveKeyContact(
   await requireUser();
   const parsed = keyContactSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return fromZod(parsed.error);
+  await assertProject(parsed.data.projectId);
+  if (id && (await assertKeyContact(id)) !== parsed.data.projectId) throw new AccessDenied();
+  if (parsed.data.contactId) await assertContact(parsed.data.contactId);
 
   const db = getDb();
   if (id) {
@@ -330,6 +354,7 @@ export async function saveKeyContact(
 
 export async function deleteKeyContact(id: string, projectId: string): Promise<void> {
   await requireUser();
+  await assertKeyContact(id);
   await getDb()
     .delete(projectContacts)
     .where(and(eq(projectContacts.id, id), eq(projectContacts.projectId, projectId)));

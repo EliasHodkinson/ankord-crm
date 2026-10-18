@@ -26,6 +26,7 @@ import { listSavedViews } from "@/lib/data/saved-views";
 import { heatOf, heatSummary } from "@/lib/staleness";
 import { formatDate, money } from "@/lib/utils";
 import { requireUser } from "@/lib/auth/session";
+import { requireStaffPage } from "@/lib/access";
 
 export const metadata: Metadata = { title: "Leads" };
 export const dynamic = "force-dynamic";
@@ -49,6 +50,8 @@ export default async function LeadsPage({
   }>;
 }) {
   const { user } = await requireUser();
+  // Staff only — a restricted person has no way in, not just no link.
+  await requireStaffPage();
   const { stage, q, owner, view } = await searchParams;
   const board = view !== "list";
   const db = getDb();

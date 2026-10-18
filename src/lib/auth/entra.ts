@@ -24,6 +24,30 @@ export const GRAPH_SCOPES = [
 
 export const SCOPE_STRING = GRAPH_SCOPES.join(" ");
 
+/**
+ * Asked for only when an admin chooses to manage people from Settings, never
+ * at an ordinary sign-in — so nobody else is prompted for them, and the app
+ * still signs in before an administrator has consented to them.
+ *
+ * - `User.Invite.All` invites a VA or contractor into the tenant as a B2B
+ *   guest. Bounded by the admin's own directory role: they also need to be
+ *   allowed to invite guests (Guest Inviter, User Administrator, or the tenant
+ *   letting members invite).
+ *
+ * Sharing the customer folder needs nothing new — driveItem invite and
+ * permission delete are covered by Sites.ReadWrite.All, bounded by the admin's
+ * own rights on the site.
+ */
+export const ACCESS_ADMIN_SCOPES = ["User.Invite.All"] as const;
+
+export const ACCESS_ADMIN_SCOPE_STRING = [...GRAPH_SCOPES, ...ACCESS_ADMIN_SCOPES].join(" ");
+
+/** Whether a granted scope list includes the people-management scopes. */
+export function hasAccessAdminScopes(scope: string | null | undefined): boolean {
+  const granted = new Set((scope ?? "").split(/\s+/).map((s) => s.toLowerCase()));
+  return ACCESS_ADMIN_SCOPES.every((s) => granted.has(s.toLowerCase()));
+}
+
 const authority = () =>
   `https://login.microsoftonline.com/${requireEnv("AZURE_AD_TENANT_ID")}`;
 
@@ -48,13 +72,14 @@ export function buildAuthorizeUrl(opts: {
   codeChallenge: string;
   loginHint?: string;
   prompt?: "login" | "select_account" | "consent";
+  scope?: string;
 }): string {
   const params = new URLSearchParams({
     client_id: requireEnv("AZURE_AD_CLIENT_ID"),
     response_type: "code",
     redirect_uri: redirectUri(),
     response_mode: "query",
-    scope: SCOPE_STRING,
+    scope: opts.scope ?? SCOPE_STRING,
     state: opts.state,
     code_challenge: opts.codeChallenge,
     code_challenge_method: "S256",
@@ -99,24 +124,31 @@ export class EntraTokenError extends Error {
   }
 }
 
-export function exchangeCode(code: string, codeVerifier: string): Promise<TokenSet> {
+export function exchangeCode(
+  code: string,
+  codeVerifier: string,
+  scope: string = SCOPE_STRING,
+): Promise<TokenSet> {
   return postToken(
     new URLSearchParams({
       grant_type: "authorization_code",
       code,
       redirect_uri: redirectUri(),
       code_verifier: codeVerifier,
-      scope: SCOPE_STRING,
+      scope,
     }),
   );
 }
 
-export function refreshTokens(refreshToken: string): Promise<TokenSet> {
+export function refreshTokens(
+  refreshToken: string,
+  scope: string = SCOPE_STRING,
+): Promise<TokenSet> {
   return postToken(
     new URLSearchParams({
       grant_type: "refresh_token",
       refresh_token: refreshToken,
-      scope: SCOPE_STRING,
+      scope,
     }),
   );
 }

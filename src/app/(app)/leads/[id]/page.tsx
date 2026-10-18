@@ -25,11 +25,15 @@ import { listCommunications } from "@/lib/data/communications";
 import { getSettings, listTeam } from "@/lib/data/common";
 import { convertLead, updateLead } from "@/lib/actions/leads";
 import { requireUser } from "@/lib/auth/session";
+import { canSeeLead, requireStaffPage } from "@/lib/access";
 import { formatDate, money, relativeTime } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
 async function load(id: string) {
+  // Checked here as well as in the page: generateMetadata runs first, and the
+  // lead's name would otherwise reach a restricted person in the tab title.
+  if (!(await canSeeLead())) return null;
   const [row] = await getDb()
     .select({ lead: leads, ownerName: users.name, ownerPhoto: users.photo })
     .from(leads)
@@ -51,6 +55,8 @@ export async function generateMetadata({
 
 export default async function LeadPage({ params }: { params: Promise<{ id: string }> }) {
   const { user } = await requireUser();
+  // Staff only — a restricted person has no way in, not just no link.
+  await requireStaffPage();
   const { id } = await params;
 
   const row = await load(id);

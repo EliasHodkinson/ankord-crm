@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
 import { asc } from "drizzle-orm";
-import { CheckCircle2, CircleAlert, ShieldCheck } from "lucide-react";
+import { CheckCircle2, CircleAlert, ShieldCheck, UsersRound } from "lucide-react";
 import { PageBody, PageHeader } from "@/components/app/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { DataRow } from "@/components/ui/field";
 import { LibraryPicker } from "./library-picker";
-import { TeamTable } from "./team-table";
 import { XeroPanel } from "./xero-panel";
 import { TeamsPanel } from "./teams-panel";
 import { getDb } from "@/lib/db";
@@ -19,6 +18,9 @@ import {
   teamsNotificationsConfigured,
 } from "@/lib/notify";
 import { requireUser } from "@/lib/auth/session";
+import { requireStaffPage } from "@/lib/access";
+import { ButtonLink } from "@/components/ui/button";
+import { labelFor, USER_ROLE } from "@/components/ui/status";
 import { GRAPH_SCOPES } from "@/lib/auth/entra";
 import { appUrl, redirectUri } from "@/lib/env";
 import { formatDateTime } from "@/lib/utils";
@@ -32,6 +34,8 @@ export default async function SettingsPage({
   searchParams: Promise<{ xero?: string; org?: string; detail?: string }>;
 }) {
   const { user } = await requireUser();
+  // Tenant configuration and the team list are not for restricted people.
+  await requireStaffPage();
   const isAdmin = user.role === "admin";
   const { xero, org, detail } = await searchParams;
 
@@ -57,9 +61,7 @@ export default async function SettingsPage({
         photo: users.photo,
         jobTitle: users.jobTitle,
         role: users.role,
-        roleSource: users.roleSource,
         isActive: users.isActive,
-        lastSeenAt: users.lastSeenAt,
       })
       .from(users)
       .orderBy(asc(users.name)),
@@ -215,10 +217,27 @@ export default async function SettingsPage({
           <CardHeader
             title="Team"
             meta="Anyone who signs in with an Ankor'd account appears here automatically"
+            action={
+              isAdmin ? (
+                <ButtonLink href="/settings/people" variant="secondary" size="sm">
+                  <UsersRound />
+                  People and access
+                </ButtonLink>
+              ) : null
+            }
           />
           <CardBody>
             {isAdmin ? (
-              <TeamTable rows={team} currentUserId={user.id} />
+              <p className="text-[13px] leading-6 text-[var(--text-muted)]">
+                {team.filter((t) => t.isActive).length} people can sign in —{" "}
+                {(["admin", "member", "viewer", "restricted"] as const)
+                  .map((role) => ({ role, n: team.filter((t) => t.isActive && t.role === role).length }))
+                  .filter(({ n }) => n > 0)
+                  .map(({ role, n }) => `${n} ${labelFor(USER_ROLE, role).toLowerCase()}`)
+                  .join(", ")}
+                . Add someone, change what they can see, or restrict a VA to particular
+                business partners in People and access.
+              </p>
             ) : (
               <ul className="flex flex-col gap-2">
                 {team

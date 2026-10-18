@@ -7,6 +7,7 @@ import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { getDb } from "@/lib/db";
 import { customers, leads } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth/session";
+import { assertStaff } from "@/lib/access";
 import { fail, logActivity, type ActionState } from "./shared";
 
 const idsSchema = z.array(z.uuid()).min(1, "Nothing is selected.").max(500);
@@ -45,6 +46,7 @@ function appendTag(column: AnyPgColumn, tag: string) {
 
 export async function bulkUpdateLeads(ids: string[], op: BulkOp): Promise<ActionState> {
   await requireUser();
+  await assertStaff();
   const parsedIds = idsSchema.safeParse(ids);
   const parsedOp = opSchema.safeParse(op);
   if (!parsedIds.success) return fail(parsedIds.error.issues[0].message);
@@ -85,6 +87,7 @@ export async function bulkUpdateLeads(ids: string[], op: BulkOp): Promise<Action
 
 export async function bulkUpdateCustomers(ids: string[], op: BulkOp): Promise<ActionState> {
   await requireUser();
+  await assertStaff();
   const parsedIds = idsSchema.safeParse(ids);
   const parsedOp = opSchema.safeParse(op);
   if (!parsedIds.success) return fail(parsedIds.error.issues[0].message);
