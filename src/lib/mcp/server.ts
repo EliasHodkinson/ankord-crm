@@ -3,6 +3,7 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { registerRecordTools } from "./tools/records";
 import { registerUpdateTools } from "./tools/updates";
 import { registerSalesTools } from "./tools/sales";
+import { registerRecordWriteTools } from "./tools/records-writes";
 
 const INSTRUCTIONS = `The Gangway is Ankor'd Pty Ltd's internal CRM. You are acting as the person who connected you, with exactly their role and access — nothing more. Everything you change is logged as them, marked as coming through you.
 
@@ -21,6 +22,7 @@ export function createGangwayServer(): McpServer {
   );
   registerRecordTools(server);
   registerUpdateTools(server);
+  registerRecordWriteTools(server);
   registerSalesTools(server);
   return server;
 }
