@@ -94,6 +94,17 @@
   --chart-grid: #e4ebe9;
   --chart-track: #eef3f2;
 
+  /* Identity — telling projects apart on the portfolio calendar and timeline.
+  Categorical, not ordinal: a project keeps its slot (hashed from its id),
+  never its rank. No orange, red or green, which belong to the accent and
+  to state. Validated with the dataviz checks against --surface. */
+  --identity-1: #00918a;
+  --identity-2: #c08a00;
+  --identity-3: #7a4fd6;
+  --identity-4: #d0457f;
+  --identity-5: #2f6fd0;
+  --identity-6: #a0662a;
+
   --shadow-sm: 0 1px 2px rgb(8 57 58 / 0.06);
   --shadow-md: 0 2px 4px -1px rgb(8 57 58 / 0.07), 0 4px 12px -2px rgb(8 57 58 / 0.06);
   --shadow-lg: 0 8px 24px -6px rgb(8 57 58 / 0.14), 0 2px 6px -2px rgb(8 57 58 / 0.08);
@@ -145,6 +156,13 @@
     --chart-series: #6d9c99;
     --chart-grid: #1d3835;
     --chart-track: #162c2a;
+    /* Identity — the same six hues, stepped for the dark surface. */
+    --identity-1: #109c94;
+    --identity-2: #b8890e;
+    --identity-3: #8c70e6;
+    --identity-4: #d2588c;
+    --identity-5: #4f86e2;
+    --identity-6: #b47843;
 
     --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
     --shadow-md: 0 2px 4px -1px rgb(0 0 0 / 0.45), 0 4px 12px -2px rgb(0 0 0 / 0.4);
@@ -194,6 +212,13 @@
   --chart-series: #6d9c99;
   --chart-grid: #1d3835;
   --chart-track: #162c2a;
+  /* Identity — the same six hues, stepped for the dark surface. */
+  --identity-1: #109c94;
+  --identity-2: #b8890e;
+  --identity-3: #8c70e6;
+  --identity-4: #d2588c;
+  --identity-5: #4f86e2;
+  --identity-6: #b47843;
 
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
   --shadow-md: 0 2px 4px -1px rgb(0 0 0 / 0.45), 0 4px 12px -2px rgb(0 0 0 / 0.4);

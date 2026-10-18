@@ -45,6 +45,18 @@
         "3110"
       ],
       "port": 3110
+    },
+    {
+      "name": "ankord-crm-portfolio",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "-p",
+        "3130"
+      ],
+      "port": 3130
     }
   ]
 }

@@ -28,6 +28,13 @@ export const RUNBOOK_VIEW_OPTIONS: ViewOption[] = [
   { value: "timeline", label: "Timeline", icon: ChartNoAxesGantt },
 ];
 
+/** Every project at once: the list, or the whole portfolio on a calendar or timeline. */
+export const PORTFOLIO_VIEW_OPTIONS: ViewOption[] = [
+  { value: "list", label: "List", icon: Rows3 },
+  { value: "calendar", label: "Calendar", icon: CalendarDays },
+  { value: "timeline", label: "Timeline", icon: ChartNoAxesGantt },
+];
+
 /**
  * Which view you are in, remembered in the URL so a link opens the same way
  * and the back button behaves.
