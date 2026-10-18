@@ -799,8 +799,10 @@ Gangway shows them, and keeps nothing it can't get from Xero.
 - `xero_payments` (read model): `id`, `xeroPaymentId` unique, `documentId` →
   documents (invoice or bill), `date`, `amount`, `reference`, `accountCode`,
   `status` (`AUTHORISED` / `DELETED`), `pulledAt`.
-- These rows are filled by the pull (§8.6). The invoice and bill detail pages
-  list them under "Payments (from Xero)". `amountPaid` and `amountDue` on the
+- These rows are filled by the pull (§8.6) and by the import (§8.8). The
+  invoice and bill detail pages list them under "Payments (from Xero)". The
+  table and the detail-page card were built with the import (migration 0015),
+  ahead of phase C; `/sales/payments` is still phase C. `amountPaid` and `amountDue` on the
   document come from Xero's own figures.
 - `/sales/payments` is a read-only list of recent receipts with links into
   Xero. It is useful for "what came in this week" and replaces EduCom's
@@ -1002,7 +1004,10 @@ money. The pull reads:
     set Gangway `open` and lock the lines. Approving a normal invoice also
     triggers its stock delivery (§5.3).
   - Invoices and bills: copy `AmountPaid` and `AmountDue`. PAID → `closed`.
-    Upsert `Payments[]` into `xero_payments`.
+    Replace the document's `xero_payments` rows with `Payments[]`
+    (`lib/xero/payments.ts`) — only when Xero sent the list, so a summary
+    response never reads as "every payment was removed". The invoice pull
+    therefore does not use `summaryOnly`.
   - VOIDED or DELETED in Xero while open in Gangway: do **not** mirror it
     automatically. Set `failed` with "Voided in Xero but still open here. Void
     it here too, or re-push." A person decides.
@@ -1026,6 +1031,83 @@ money. The pull reads:
 - Local number series (SO, GR, DN).
 - Sync health: counts of `failed` and `blocked` with links, last pull time and
   Reconnect.
+
+### 8.8 Import from Xero (Q11)
+
+Q11 is answered: **existing Xero records are imported** rather than starting
+fresh. `/sales/import` (staff only; writes need a member) has three steps, in
+the order they depend on each other. Each step reads Xero live and shows what
+would happen before anything does, so the screen is its own dry run.
+
+**The rule that matters: importing reads Xero and writes only to The
+Gangway.** Everything under `lib/xero/import/` reaches Xero through
+`xeroGet()` (GET only — there is no method to get wrong). An imported
+document lands `xeroSyncState = 'synced'` with `xeroPushedVersion = version`,
+and an imported item lands `synced`: the one state the push engine's claim and
+the cron leave alone. No push, queue or history note is called. Editing an
+imported document afterwards is an ordinary edit and pushes like one; that is
+the workflow carrying on. An imported quote keeps its Reference as Xero had it
+(no `gw:` marker: that only serves lost-create recovery).
+
+1. **Contacts → business partners.** Every active Xero contact, with a
+   suggested partner (`lib/xero/import/match.ts`, pure and tested):
+   - stored `xeroContactId` → **linked**;
+   - else exactly one unlinked partner with the same 11-digit **ABN**;
+   - else exactly one with the same **email**;
+   - else exactly one with the same normalised **name** ("Pty Ltd",
+     punctuation and case ignored) — shown as "Name only — check", never
+     preselected and never applied in bulk.
+
+   A partner already linked to a different contact is never suggested (one
+   ContactID ↔ one partner). Per row: **Link** (through `linkXeroContact` in
+   `actions/xero.ts`, which enforces that rule; Xero's customer/supplier flags
+   are added, never removed), **Create** a partner from the contact (name, ABN,
+   email, phone, street address, website, flags from Xero, already linked; a
+   contact that is neither starts as a customer), or **Skip**
+   (`xero_import_skips`, undoable). "Link N ABN and email matches" applies the
+   strong suggestions in one go. Creating or linking never writes the contact
+   back to Xero.
+2. **Items.** `GET /Items`, keyed by `ItemID`, then by `Code` (unique index on
+   `items.xero_item_id`). Xero's fields are copied (code, name, descriptions,
+   prices, accounts, tax types, sold/purchased); Gangway's own (`tracksStock`,
+   unit, usual supplier) are kept. An item saved here that has not reached Xero
+   yet is left alone, and a code linked to a different Xero item is shown as a
+   clash. Re-running updates in place.
+3. **Quotes and invoices.** Scope: **open in Xero** (default: quotes DRAFT,
+   SENT, ACCEPTED; ACCREC DRAFT, SUBMITTED, AUTHORISED), **dated between**
+   (any live status, paid included), or **by number** ("INV-0028"). Deleted and
+   voided documents, ACCPAY bills and non-AUD documents are never imported.
+   Each row shows what will happen:
+   - **New**: inserted with Xero's number, status, lines, totals, amount
+     paid/due and payments (`lib/xero/import/map.ts`, pure and tested). Status
+     follows §4.6: quote SENT → open, ACCEPTED → open + accepted (so "Convert
+     to sales order" leads), INVOICED → closed accepted, DECLINED → closed;
+     invoice SUBMITTED → draft, AUTHORISED → open, PAID → closed. A line with
+     no quantity and no price becomes a text row; item rows link to the item
+     with the same code. Totals are recomputed with Gangway's arithmetic and
+     Xero's total is kept in `xeroTotal`, so a difference shows on the page.
+     A quote without an expiry gets `docDate + quoteValidityDays`.
+   - **Update from Xero**: imported before and untouched since (`updatedAt <=
+     importedAt`, still `synced`, and nothing drawn from it) — header, lines,
+     money and payments are refreshed in one transaction, and `version` is
+     bumped so an open editor is told to reload.
+   - **Already here**: made in Gangway, or worked on since import, or has a
+     sales order or invoice drawn from it. Gangway owns its lines (§8.6), so
+     only the pull's rules apply (`applyQuote` / `applyInvoice`) plus payments.
+   - **Contact not matched**: waits for step 1, with a link to that contact.
+
+   Imported documents carry `documents.importedAt` and say so in their Xero
+   panel. They continue the flow with the ordinary copy-to (quote → sales
+   order → invoice). Every document is its own transaction; a failure is
+   reported and the rest carry on.
+
+**Purchasing (phase B) plugs in without touching the engine:** add
+`"purchase_orders"` and `"bills"` to `IMPORT_SOURCE_KEYS`
+(`lib/xero/import/scope.ts`), a `normalisePurchaseOrder` beside
+`normaliseQuote` in `map.ts` (`normaliseInvoice` already returns `bill` for
+ACCPAY), a status rule in `gangwayState`, and an entry in `IMPORT_SOURCES`
+(`sources.ts`). `documents.ts` works only on `ImportedDoc`. Bills keep the
+supplier's invoice number in `supplierInvoiceNumber`, not `number`.
 
 ---
 
@@ -1065,6 +1147,7 @@ All server components with `force-dynamic`, under `src/app/(app)/`:
 | `/purchasing/bills` · `/new?from=<poId>` · `/[id]` · `/[id]/edit` | B |
 | `/api/documents/[id]/xero-pdf`: streams Xero's own PDF (`GET /<Resource>/{id}` with `Accept: application/pdf`; confirm per resource), used for "Save PDF to SharePoint" and "View PDF" | A |
 | `/api/cron/xero-sync`, `/api/xero/webhook` | A (cron), C (webhook) |
+| `/sales/import` (tabs: contacts, items, documents): Import from Xero (§8.8), staff only | Q11 |
 
 One implementation serves them all: `components/app/documents/` holds
 `DocumentList`, `DocumentDetail`, `DocumentEditor`, `LinesEditor`,
@@ -1237,6 +1320,9 @@ Build:
 - History notes for PO raised and goods received.
 - Tests: PO edit rules, receipt counters and auto-allocation, the bill and
   receipt independence matrix, `lineState()`.
+- Import from Xero for Purchase Orders and Bills (ACCPAY), through the seams
+  in §8.8, so existing POs (e.g. PO-0011, paid and shipped, not yet received)
+  can be received in Gangway.
 
 Done when:
 
@@ -1316,5 +1402,5 @@ Done when:
 | Q8 | **Customer-specific pricing**: one price per item, or price lists per customer? | One price per item |
 | Q9 | **Who can do what**: may every member approve invoices and POs, or should approval be limited (e.g. an Entra app role `CRM.Finance`)? | Members can do everything except settings. Viewers read only |
 | Q10 | **Approve in Gangway or Xero?** Are invoices usually approved in Xero by someone else, or by the person raising them? | Both work. Gangway shows Approve, and approving in Xero is picked up |
-| Q11 | **Existing Xero quotes, invoices and POs**: import open ones into Gangway at go-live, or start fresh? | Start fresh. The customer Xero panel still shows history |
+| Q11 | **Existing Xero quotes, invoices and POs**: import open ones into Gangway at go-live, or start fresh? | **Answered: import.** Existing Xero records are brought in so the workflow carries on from them (e.g. INV-0028 for Mister Fixed, already paid, whose mat is on PO-0011). See §8.8 |
 | Q12 | **Projects**: should invoicing be driven from projects (deposits and milestones), beyond the optional project link? | Optional link and a "Commercials" card only |

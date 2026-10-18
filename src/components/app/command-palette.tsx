@@ -244,6 +244,15 @@ export function CommandPalette({ restricted = false }: { restricted?: boolean })
       staffOnly: true,
     },
     {
+      id: "n-xero-import",
+      label: "Import from Xero",
+      group: "Go to",
+      icon: Upload,
+      run: () => go("/sales/import"),
+      keywords: "xero contacts quotes invoices items migrate existing",
+      staffOnly: true,
+    },
+    {
       id: "n-import",
       label: "Import from a file",
       group: "Go to",

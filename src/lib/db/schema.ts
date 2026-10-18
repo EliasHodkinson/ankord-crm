@@ -11,6 +11,7 @@ import {
   numeric,
   index,
   uniqueIndex,
+  primaryKey,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
@@ -1032,6 +1033,8 @@ export const items = pgTable(
   },
   (t) => [
     uniqueIndex("items_code_idx").on(t.code),
+    /* One Xero item, one Gangway item — the import keys on it. */
+    uniqueIndex("items_xero_idx").on(t.xeroItemId).where(sql`${t.xeroItemId} is not null`),
     index("items_name_idx").on(t.name),
     index("items_sync_idx").on(t.xeroSyncState),
   ],
@@ -1116,6 +1119,12 @@ export const documents = pgTable(
     xeroUpdatedAt: timestamp("xero_updated_at", { withTimezone: true }),
     /** Xero's own Total as last seen, so an edit made in Xero shows up here. */
     xeroTotal: cash("xero_total"),
+    /**
+     * Set when the document was brought in from Xero rather than created
+     * here (lib/xero/import). Re-running the import refreshes its lines only
+     * while it is still exactly as imported — see `isPristineImport`.
+     */
+    importedAt: timestamp("imported_at", { withTimezone: true }),
 
     createdById: uuid("created_by_id").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -1288,6 +1297,49 @@ export const xeroCache = pgTable("xero_cache", {
   fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * Payments against invoices and bills, as Xero has them (spec §7). A read
+ * model: filled by the import and the pull, never typed here, and shown
+ * read-only under the document.
+ */
+export const xeroPayments = pgTable(
+  "xero_payments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    xeroPaymentId: text("xero_payment_id").notNull(),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    date: date("date"),
+    amount: cash("amount").notNull(),
+    reference: text("reference"),
+    accountCode: text("account_code"),
+    /** AUTHORISED or DELETED. */
+    status: text("status"),
+    pulledAt: timestamp("pulled_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("xero_payments_xero_idx").on(t.xeroPaymentId),
+    index("xero_payments_document_idx").on(t.documentId, t.date),
+  ],
+);
+
+/**
+ * Xero records someone chose not to bring in — so far only contacts. Kept so
+ * the review screen stops offering them, and so the choice can be undone.
+ */
+export const xeroImportSkips = pgTable(
+  "xero_import_skips",
+  {
+    kind: text("kind").$type<"contact">().notNull(),
+    xeroId: text("xero_id").notNull(),
+    name: text("name"),
+    skippedById: uuid("skipped_by_id").references(() => users.id, { onDelete: "set null" }),
+    skippedAt: timestamp("skipped_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.kind, t.xeroId] })],
+);
+
 /* ───────────────────────── relations ───────────────────────── */
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -1421,3 +1473,4 @@ export type DocumentStatus = (typeof documentStatusEnum.enumValues)[number];
 export type RowType = (typeof rowTypeEnum.enumValues)[number];
 export type AmountsAre = (typeof amountsAreEnum.enumValues)[number];
 export type XeroSyncState = (typeof xeroSyncStateEnum.enumValues)[number];
+export type XeroPayment = typeof xeroPayments.$inferSelect;

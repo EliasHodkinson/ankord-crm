@@ -5,6 +5,8 @@ import { documents, settings, type Document } from "@/lib/db/schema";
 import { baseLinesOf, recomputeCounters } from "@/lib/actions/documents-core";
 import { toCents } from "@/lib/sales/money";
 import { parseXeroDate, xeroSend } from "./client";
+import { mapPayments, type RawPayment } from "./import/map";
+import { replacePayments } from "./payments";
 
 /**
  * Reading Xero back (spec §8.6). Gangway owns lines and quantities; Xero owns
@@ -30,6 +32,7 @@ type XeroInvoice = {
   Total?: number;
   AmountPaid?: number;
   AmountDue?: number;
+  Payments?: RawPayment[];
   UpdatedDateUTC?: string;
 };
 
@@ -40,7 +43,7 @@ function goneMessage(status: string, kind: string) {
 }
 
 /** Applies one quote's Xero state. Returns true if anything changed. */
-async function applyQuote(doc: Document, x: XeroQuote): Promise<boolean> {
+export async function applyQuote(doc: Document, x: XeroQuote): Promise<boolean> {
   const status = x.Status ?? doc.xeroStatus ?? "DRAFT";
   const patch: Partial<Document> = {
     xeroStatus: status,
@@ -72,7 +75,7 @@ async function applyQuote(doc: Document, x: XeroQuote): Promise<boolean> {
 }
 
 /** Applies one invoice's Xero state. Returns true if anything changed. */
-async function applyInvoice(doc: Document, x: XeroInvoice): Promise<boolean> {
+export async function applyInvoice(doc: Document, x: XeroInvoice): Promise<boolean> {
   const status = x.Status ?? doc.xeroStatus ?? "DRAFT";
   const patch: Partial<Document> = {
     xeroStatus: status,
@@ -115,6 +118,12 @@ async function applyInvoice(doc: Document, x: XeroInvoice): Promise<boolean> {
     await getDb().update(documents).set(patch).where(eq(documents.id, doc.id));
   }
 
+  // Only when Xero sent the list: a summary response omits it, and an absent
+  // list must not read as "every payment was removed".
+  if (x.Payments) {
+    await replacePayments(doc.id, mapPayments(x.Payments));
+  }
+
   const moneyChanged =
     toCents(patch.amountPaid ?? "0") !== toCents(doc.amountPaid) ||
     patch.status !== undefined;
@@ -149,7 +158,8 @@ export async function pullDocuments(options: { ids?: string[]; since?: Date | nu
     const batch = invoiceDocs.slice(i, i + 40);
     const data = await xeroSend<{ Invoices?: XeroInvoice[] }>(
       "GET",
-      `/Invoices?IDs=${batch.map((d) => d.xeroId).join(",")}&summaryOnly=true`,
+      // Not summaryOnly: that drops Payments, which the read model needs.
+      `/Invoices?IDs=${batch.map((d) => d.xeroId).join(",")}`,
     );
     const byId = new Map((data.Invoices ?? []).map((x) => [x.InvoiceID, x]));
     for (const doc of batch) {

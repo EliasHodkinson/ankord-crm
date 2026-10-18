@@ -6,6 +6,7 @@ import {
   Building2,
   ChartNoAxesColumn,
   CircleCheck,
+  CloudDownload,
   FileText,
   FolderKanban,
   Gauge,
@@ -42,6 +43,7 @@ const SECTIONS: { heading?: string; items: NavItem[] }[] = [
       { href: "/sales/orders", label: "Sales orders", icon: Package, badge: "toOrder" },
       { href: "/sales/invoices", label: "Invoices", icon: ReceiptText, badge: "overdue" },
       { href: "/sales/items", label: "Items", icon: Tags, staffOnly: true },
+      { href: "/sales/import", label: "Import from Xero", icon: CloudDownload, staffOnly: true },
     ],
   },
   {
