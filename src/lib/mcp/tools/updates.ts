@@ -145,7 +145,7 @@ export function registerUpdateTools(server: McpServer) {
     {
       title: "Remember something about a contact",
       description:
-        "Keep a small human detail about a contact — a preference, something personal, an upcoming event (with a date, optionally yearly and with a reminder), or something they mentioned.",
+        "Keep a dated or one-off detail about an existing contact — a preference, something personal, an upcoming event (with a date, optionally yearly and with a reminder), or something they mentioned. These sit in a list under the contact. To add a new person use create_contact; to change their name, role, email, phone, coffee order, birthday and the like use update_contact.",
       inputSchema: z.object({
         contactId: z.uuid(),
         kind: z.enum(["preference", "personal", "event", "mention"]),

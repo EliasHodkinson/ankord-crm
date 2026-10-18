@@ -127,6 +127,16 @@ async function main() {
   await db.connect();
   console.log(`MCP check against ${BASE}`);
 
+  // The server must be the one configured with this .env.local. A dev server
+  // started from another checkout answers on the same port with its own
+  // database (production, say) — and would receive this script's writes.
+  const issuer = (await (await fetch(`${BASE}/.well-known/oauth-authorization-server`)).json()).issuer;
+  if (issuer !== BASE) {
+    console.error(`Refusing: the server at ${BASE} says its APP_URL is ${issuer}, so it is not running with this .env.local.`);
+    await db.end();
+    process.exit(1);
+  }
+
   // Fixtures: two partners, a project and step on each, a restricted person
   // granted only the first, and a staff member.
   const allowed = await one<{ id: string }>(`insert into customers (name) values ($1) returning id`, [`${tag} Allowed Pty Ltd`]);
@@ -143,6 +153,10 @@ async function main() {
   const allowedProject = await project(allowed.id, `${tag} Allowed project`);
   const otherProject = await project(other.id, `${tag} Other project`);
   const lead = await one<{ id: string }>(`insert into leads (company_name) values ($1) returning id`, [`${tag} Lead`]);
+  const otherContact = await one<{ id: string }>(
+    `insert into contacts (customer_id, first_name, last_name, email, coffee_order) values ($1, 'Robin', 'Other', 'robin@other.example', 'Flat white') returning id`,
+    [other.id],
+  );
   const user = async (role: string, label: string) =>
     one<{ id: string }>(
       `insert into users (azure_oid, tenant_id, email, name, role) values ($1, 'test', $2, $3, $4) returning id`,
@@ -303,7 +317,10 @@ async function main() {
     await check("tools are listed", async () => {
       const { json } = await rpc(vaToken, "tools/list");
       const names = json.result.tools.map((t: { name: string }) => t.name);
-      for (const name of ["search", "get_business_partner", "log_communication", "update_step", "create_quote"]) {
+      for (const name of [
+        "search", "get_business_partner", "log_communication", "update_step", "create_quote",
+        "create_contact", "update_contact", "create_project", "update_project", "list_project_templates",
+      ]) {
         assert.ok(names.includes(name), `missing ${name}`);
       }
     });
@@ -375,7 +392,84 @@ async function main() {
       assert.equal(entry.meta.via, "mcp");
     });
 
+    await check("adds a contact to their own partner, marked via MCP", async () => {
+      const result = await call(vaToken, "create_contact", {
+        businessPartnerId: allowed.id, firstName: "Sam", lastName: "Allowed", jobTitle: "Office manager", email: "sam@allowed.example", coffeeOrder: "Long black",
+      });
+      assert.ok(!result.isError, result.text);
+      const { id } = JSON.parse(result.text);
+      const row = await one<{ customer_id: string; job_title: string; coffee_order: string }>(
+        `select customer_id, job_title, coffee_order from contacts where id = $1`, [id],
+      );
+      assert.equal(row.customer_id, allowed.id);
+      assert.equal(row.coffee_order, "Long black");
+      const entry = await one<{ meta: Record<string, string> }>(`select meta from activity where entity_id = $1`, [id]);
+      assert.equal(entry.meta.via, "mcp");
+    });
+    await check("cannot add a contact to another partner", async () => {
+      await denied(vaToken, "create_contact", { businessPartnerId: other.id, firstName: "Sneaky" });
+      const n = await one<{ n: number }>(`select count(*)::int as n from contacts where customer_id = $1`, [other.id]);
+      assert.equal(n.n, 1);
+    });
+    await check("cannot edit another partner's contact", async () => {
+      await denied(vaToken, "update_contact", { contactId: otherContact.id, jobTitle: "Changed" });
+      assert.equal((await one<{ job_title: string | null }>(`select job_title from contacts where id = $1`, [otherContact.id])).job_title, null);
+    });
+    await check("cannot create a project for another partner", async () => {
+      await denied(vaToken, "create_project", { businessPartnerId: other.id, name: `${tag} sneaky project` });
+      const n = await one<{ n: number }>(`select count(*)::int as n from projects where customer_id = $1`, [other.id]);
+      assert.equal(n.n, 1);
+    });
+    await check("cannot edit another partner's project", async () => {
+      await denied(vaToken, "update_project", { projectId: otherProject.id, name: "Renamed" });
+      assert.equal((await one<{ name: string }>(`select name from projects where id = $1`, [otherProject.id])).name, `${tag} Other project`);
+    });
+    await check("creates a project for their own partner, as on the web", async () => {
+      const result = await call(vaToken, "create_project", { businessPartnerId: allowed.id, name: `${tag} VA project` });
+      assert.ok(!result.isError, result.text);
+      const created = await one<{ customer_id: string; owner_id: string }>(`select customer_id, owner_id from projects where id = $1`, [JSON.parse(result.text).id]);
+      assert.equal(created.customer_id, allowed.id);
+      assert.equal(created.owner_id, restricted.id);
+    });
+
     console.log("\nStaff, through MCP");
+    await check("edits a contact; fields not given are kept", async () => {
+      const result = await call(staffToken, "update_contact", { contactId: otherContact.id, jobTitle: "Treasurer", phone: "02 6000 0000" });
+      assert.ok(!result.isError, result.text);
+      const row = await one<{ job_title: string; phone: string; email: string; coffee_order: string; last_name: string }>(
+        `select job_title, phone, email, coffee_order, last_name from contacts where id = $1`, [otherContact.id],
+      );
+      assert.equal(row.job_title, "Treasurer");
+      assert.equal(row.phone, "02 6000 0000");
+      assert.equal(row.email, "robin@other.example");
+      assert.equal(row.coffee_order, "Flat white");
+      assert.equal(row.last_name, "Other");
+    });
+    await check("creates a project from a template, with its runbook", async () => {
+      const templates = JSON.parse((await call(staffToken, "list_project_templates")).text) as { key: string }[];
+      assert.ok(templates.some((t) => t.key === "website-build"));
+      const result = await call(staffToken, "create_project", {
+        businessPartnerId: other.id, name: `${tag} Website`, template: "website-build", targetDate: "2026-12-01",
+      });
+      assert.ok(!result.isError, result.text);
+      const id = JSON.parse(result.text).id;
+      const counts = await one<{ phases: number; steps: number; template_key: string; target_date: string }>(
+        `select (select count(*)::int from project_phases where project_id = p.id) as phases,
+                (select count(*)::int from project_steps where project_id = p.id) as steps,
+                template_key, target_date::text from projects p where id = $1`, [id],
+      );
+      assert.equal(counts.template_key, "website-build");
+      assert.ok(counts.phases > 1 && counts.steps > 5, JSON.stringify(counts));
+      assert.equal(counts.target_date, "2026-12-01");
+    });
+    await check("updates a project; fields not given are kept", async () => {
+      const result = await call(staffToken, "update_project", { projectId: otherProject.id, status: "active", headline: "Under way" });
+      assert.ok(!result.isError, result.text);
+      const row = await one<{ status: string; headline: string; name: string }>(`select status, headline, name from projects where id = $1`, [otherProject.id]);
+      assert.equal(row.status, "active");
+      assert.equal(row.headline, "Under way");
+      assert.equal(row.name, `${tag} Other project`);
+    });
     await check("reads any partner", async () => {
       const result = await call(staffToken, "get_business_partner", { id: other.id });
       assert.ok(!result.isError, result.text);

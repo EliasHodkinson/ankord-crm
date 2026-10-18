@@ -449,12 +449,14 @@ log as you, marked `via: "mcp"` with the client's name (the dashboard shows
 
 | | |
 |---|---|
-| **Read** | `search`, `whoami`, `list_team`, business partners and contacts, leads (staff), projects with their runbook phases and steps, tasks, communications, sales and purchasing documents (by id or number), items (staff) |
-| **Write, inside The Gangway** | `log_communication` (times in Sydney time), `add_note`, `add_contact_detail`, `create_task`, `update_task`, `update_step` (status, blocker, assignee, due, notes, checklist), `clear_step_blocker`, `add_step`, `set_lead_stage`, `create_lead`, `update_lead`, `confirm_sales_order` |
+| **Read** | `search`, `whoami`, `list_team`, business partners and contacts, leads (staff), projects with their runbook phases and steps, tasks, communications, sales and purchasing documents (by id or number), items (staff), `list_project_templates` |
+| **Write, inside The Gangway** | `log_communication` (times in Sydney time), `add_note`, `create_contact`, `update_contact`, `add_contact_detail` (a dated or one-off detail under a contact), `create_task`, `update_task`, `update_step` (status, blocker, assignee, due, notes, checklist), `clear_step_blocker`, `add_step`, `set_lead_stage`, `create_lead`, `update_lead`, `confirm_sales_order` |
 | **Write, reaching Xero** | `create_quote` (a DRAFT in Xero), `create_sales_order` (a note on the quote it converts), `add_po_shipment` (a note on the Xero PO), `receive_goods` (a note on the Xero PO), `import_from_xero` (reads Xero, writes here) |
+| **Write, reaching Microsoft 365** | `create_project` (from a runbook template; makes its SharePoint folder when automatic folders are on, or when asked), `update_project` (a linked Planner plan follows the rename) |
 
-The Xero tools are marked as reaching outside, and say so, so the client asks
-before calling them. Nothing deletes, and nothing sends mail.
+The Xero and Microsoft 365 tools are marked as reaching outside, and say so, so
+the client asks before calling them. A restricted person can add contacts and
+projects only for the business partners granted to them, as on the web. Nothing deletes, and nothing sends mail.
 
 ### How it works
 
