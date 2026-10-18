@@ -25,6 +25,7 @@ import {
   projects,
   settings,
   users,
+  xeroPayments,
   xeroSyncLog,
   type Document,
 } from "@/lib/db/schema";
@@ -267,6 +268,18 @@ export async function lastXeroProblem(id: string) {
     .orderBy(desc(xeroSyncLog.createdAt))
     .limit(1);
   return row ?? null;
+}
+
+/**
+ * Payments Xero holds against an invoice or bill, newest first. Read-only:
+ * they are recorded in Xero and copied here by the import and the pull.
+ */
+export async function documentPayments(id: string) {
+  return getDb()
+    .select()
+    .from(xeroPayments)
+    .where(and(eq(xeroPayments.documentId, id), sql`coalesce(${xeroPayments.status}, 'AUTHORISED') <> 'DELETED'`))
+    .orderBy(desc(xeroPayments.date));
 }
 
 /* ── defaults for new documents ──────────────────────────────────── */

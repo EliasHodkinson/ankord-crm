@@ -141,3 +141,8 @@ test("items go to Xero untracked, with their accounts and tax", () => {
   assert.deepEqual(payload.SalesDetails, { UnitPrice: 150, AccountCode: "200", TaxType: "OUTPUT" });
   assert.deepEqual(payload.PurchaseDetails, { AccountCode: "310", TaxType: "INPUT" });
 });
+
+test("an imported quote keeps its Reference as Xero had it", () => {
+  const payload = quotePayload({ ...doc, xeroId: "q-1", imported: true }, []);
+  assert.equal(payload.Reference, "PO 7781");
+});

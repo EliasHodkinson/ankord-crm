@@ -261,6 +261,32 @@ export const XERO_SYNC: Record<string, Entry> = {
   blocked: { label: "Needs attention", tone: "warn" },
 };
 
+/** Import from Xero: why a contact is suggested for a partner (lib/xero/import/match.ts). */
+export const IMPORT_MATCH: Record<string, Entry> = {
+  linked: { label: "Linked", tone: "ok" },
+  abn: { label: "Same ABN", tone: "brand" },
+  email: { label: "Same email", tone: "brand" },
+  name: { label: "Name only — check", tone: "warn" },
+};
+
+/** Import from Xero: what happens to a document (lib/xero/import/scope.ts DocPlan). */
+export const IMPORT_DOC_PLAN: Record<string, Entry> = {
+  create: { label: "New", tone: "info" },
+  update: { label: "Update from Xero", tone: "brand" },
+  refresh: { label: "Already here", tone: "neutral" },
+  waiting: { label: "Contact not matched", tone: "warn" },
+  currency: { label: "Not AUD", tone: "muted" },
+};
+
+/** Import from Xero: what happens to an item. */
+export const IMPORT_ITEM_PLAN: Record<string, Entry> = {
+  create: { label: "New", tone: "info" },
+  update: { label: "Update from Xero", tone: "brand" },
+  unchanged: { label: "Up to date", tone: "ok" },
+  held: { label: "Left as it is", tone: "warn" },
+  conflict: { label: "Code clash", tone: "danger" },
+};
+
 export const ROW_TYPE: Record<string, { label: string; hint: string }> = {
   item: { label: "Item", hint: "A priced line" },
   alternative: { label: "Alternative", hint: "An optional extra, shown on the quote but not counted" },

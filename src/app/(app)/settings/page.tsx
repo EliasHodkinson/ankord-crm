@@ -280,6 +280,11 @@ export default async function SettingsPage({
             <CardHeader
               title="Sales & Xero"
               meta="Default accounts, tax rates, terms and numbering for quotes, orders and invoices"
+              action={
+                <ButtonLink href="/sales/import" size="sm" variant="secondary">
+                  Import from Xero
+                </ButtonLink>
+              }
             />
             <CardBody>
               <SalesSettings

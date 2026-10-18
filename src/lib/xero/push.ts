@@ -181,6 +181,7 @@ async function load(documentId: string): Promise<Loaded> {
       summary: doc.summary,
       terms: doc.terms,
       salesOrderNumber: salesOrder?.number ?? null,
+      imported: doc.importedAt !== null,
       brandingThemeId: theme ?? null,
     },
   };

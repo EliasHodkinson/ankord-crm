@@ -42,6 +42,11 @@ export type MapDoc = {
   terms: string | null;
   /** The sales order this traces to, if any — goes into Reference. */
   salesOrderNumber: string | null;
+  /**
+   * Brought in from Xero rather than created by a push. It was never created
+   * from here, so it needs no lost-create marker on its Reference.
+   */
+  imported?: boolean;
   brandingThemeId: string | null;
 };
 
@@ -174,7 +179,7 @@ export function quotePayload(doc: MapDoc, lines: MapLine[]) {
       buildReference({
         customerRef: doc.reference,
         salesOrderNumber: null,
-        marker: markerFor(doc.id),
+        marker: doc.imported ? null : markerFor(doc.id),
       }) ?? undefined,
     ...(doc.title ? { Title: doc.title } : {}),
     ...(doc.summary ? { Summary: doc.summary } : {}),

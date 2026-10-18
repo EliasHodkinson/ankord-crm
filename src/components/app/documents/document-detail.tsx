@@ -13,6 +13,7 @@ import { LinesView } from "./lines-view";
 import { TotalsBox } from "./document-editor";
 import {
   documentActivity,
+  documentPayments,
   getDocument,
   lastXeroProblem,
   relatedDocuments,
@@ -42,10 +43,12 @@ export async function DocumentDetailPage({
   if (!detail || detail.doc.type !== type) notFound();
   const { doc, lines, partner, owner, project, salesOrder } = detail;
 
-  const [related, trail, problem] = await Promise.all([
+  const hasPayments = type === "invoice" || type === "bill";
+  const [related, trail, problem, payments] = await Promise.all([
     relatedDocuments(doc),
     documentActivity(doc.id),
     lastXeroProblem(doc.id),
+    hasPayments && !access.restricted ? documentPayments(doc.id) : Promise.resolve([]),
   ]);
 
   const config = DOC_TYPES[type];
@@ -226,6 +229,11 @@ export async function DocumentDetailPage({
                   canWrite={canWrite}
                   mismatch={mismatch}
                 />
+                {doc.importedAt ? (
+                  <p className="mt-3 border-t border-[var(--border-soft)] pt-3 text-[12px] leading-5 text-[var(--text-muted)]">
+                    Imported from Xero {formatDateTime(doc.importedAt)}. It was already in Xero, so importing sent nothing there.
+                  </p>
+                ) : null}
               </CardBody>
             </Card>
           ) : !config.xero ? (
@@ -235,6 +243,37 @@ export async function DocumentDetailPage({
                 <p className="text-[13px] leading-6 text-[var(--text-muted)]">
                   {label}s stay in The Gangway; Xero has no such document. Xero sees{" "}
                   {doc.number ?? "it"} in the reference of the invoices and purchase orders drawn from it.
+                </p>
+              </CardBody>
+            </Card>
+          ) : null}
+
+          {hasPayments && !access.restricted && (payments.length || num(doc.amountPaid) > 0) ? (
+            <Card>
+              <CardHeader title="Payments" meta="Recorded in Xero" />
+              <CardBody>
+                {payments.length === 0 ? (
+                  <p className="text-[13px] text-[var(--text-muted)]">
+                    {formatMoney(doc.amountPaid)} paid in Xero. The individual payments appear after the next refresh.
+                  </p>
+                ) : (
+                  <ul className="flex flex-col divide-y divide-[var(--border-soft)]">
+                    {payments.map((p) => (
+                      <li key={p.id} className="flex items-baseline justify-between gap-3 py-1.5 text-[13px] first:pt-0 last:pb-0">
+                        <span className="min-w-0">
+                          <span className="tabular">{formatDate(p.date)}</span>
+                          {p.reference ? (
+                            <span className="block truncate text-[12px] text-[var(--text-muted)]">{p.reference}</span>
+                          ) : null}
+                        </span>
+                        <span className="tabular font-medium">{formatMoney(p.amount)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <p className="mt-3 flex justify-between border-t border-[var(--border-soft)] pt-3 text-[12px] text-[var(--text-muted)]">
+                  <span>Still due</span>
+                  <span className="tabular font-medium text-[var(--text)]">{formatMoney(doc.amountDue)}</span>
                 </p>
               </CardBody>
             </Card>

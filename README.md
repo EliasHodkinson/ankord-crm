@@ -267,6 +267,13 @@ documents, and pushes anything waiting, serially and within Xero's rate limit.
 Vercel's Hobby plan only runs crons daily; on it, use **Sync now** in Settings
 or Refresh on a document.
 
+**Import from Xero** (Sales → Import from Xero, staff only) brings existing
+Xero records in so work carries on here: match Xero contacts to business
+partners (by stored link, ABN or email; a name-only match is always a person's
+call), import items, then quotes and invoices — open ones by default, or by
+date range or number (e.g. INV-0028). Re-running updates in place. It only
+reads Xero: nothing is created or changed there by importing. See spec §8.8.
+
 **Testing.** Use the Xero demo company, never the live organisation. A Neon
 branch made from production carries production's Xero tokens, and Xero refresh
 tokens are single-use: one refresh from the branch breaks production's
@@ -274,7 +281,7 @@ connection. Delete the `xero_connection` row on any test branch before running
 the app against it, then connect the demo company there.
 
 ```bash
-npm test    # totals, copy-to, line states and the Xero payload mapping
+npm test    # totals, copy-to, line states, Xero payload mapping and import mapping
 ```
 
 ---
