@@ -41,6 +41,8 @@ export type DocTypeConfig = {
   rows: ("item" | "alternative" | "text" | "subtotal")[];
   /** Built in this phase. Later phases flip theirs on. */
   available: boolean;
+  /** Made by an action of its own (Receive, Deliver), never in the editor. */
+  recordOnly?: boolean;
 };
 
 export const DOC_TYPES: Record<DocType, DocTypeConfig> = {
@@ -86,11 +88,12 @@ export const DOC_TYPES: Record<DocType, DocTypeConfig> = {
     base: "/sales/deliveries",
     entity: "deliveries",
     side: "customer",
+    recordOnly: true,
     xero: null,
     dueLabel: null,
     dueRequired: false,
     rows: ["item"],
-    available: false,
+    available: true,
   },
   purchase_order: {
     label: "Purchase order",
@@ -102,7 +105,7 @@ export const DOC_TYPES: Record<DocType, DocTypeConfig> = {
     dueLabel: "Delivery date",
     dueRequired: true,
     rows: ["item", "text", "subtotal"],
-    available: false,
+    available: true,
   },
   goods_receipt: {
     label: "Goods receipt",
@@ -110,11 +113,12 @@ export const DOC_TYPES: Record<DocType, DocTypeConfig> = {
     base: "/purchasing/receipts",
     entity: "receipts",
     side: "supplier",
+    recordOnly: true,
     xero: null,
     dueLabel: null,
     dueRequired: false,
     rows: ["item"],
-    available: false,
+    available: true,
   },
   bill: {
     label: "Bill",
@@ -126,7 +130,7 @@ export const DOC_TYPES: Record<DocType, DocTypeConfig> = {
     dueLabel: "Due date",
     dueRequired: false,
     rows: ["item", "text"],
-    available: false,
+    available: true,
   },
 };
 

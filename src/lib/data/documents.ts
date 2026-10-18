@@ -184,7 +184,10 @@ export type RelatedDoc = Pick<
   | "amountPaid"
   | "amountDue"
   | "xeroSyncState"
-> & { relation: "base" | "child" };
+> & {
+  /** base: drawn from it. child: drawn into it. ordered: a PO raised for it. for: what a PO was raised for. */
+  relation: "base" | "child" | "ordered" | "for";
+};
 
 /** Documents this one was drawn from, and those drawn from it. */
 export async function relatedDocuments(doc: Document): Promise<RelatedDoc[]> {
@@ -208,7 +211,9 @@ export async function relatedDocuments(doc: Document): Promise<RelatedDoc[]> {
     xeroSyncState: documents.xeroSyncState,
   };
 
-  const [bases, children, traced] = await Promise.all([
+  const source = alias(documentLines, "source");
+  const raised = alias(documentLines, "raised");
+  const [bases, children, traced, ordered, raisedFor] = await Promise.all([
     db
       .selectDistinct(cols)
       .from(self)
@@ -224,12 +229,26 @@ export async function relatedDocuments(doc: Document): Promise<RelatedDoc[]> {
     doc.type === "sales_order"
       ? db.select(cols).from(documents).where(eq(documents.salesOrderId, doc.id))
       : Promise.resolve([]),
+    db
+      .selectDistinct(cols)
+      .from(self)
+      .innerJoin(raised, eq(raised.sourceLineId, self.id))
+      .innerJoin(documents, eq(documents.id, raised.documentId))
+      .where(eq(self.documentId, doc.id)),
+    db
+      .selectDistinct(cols)
+      .from(self)
+      .innerJoin(source, eq(source.id, self.sourceLineId))
+      .innerJoin(documents, eq(documents.id, source.documentId))
+      .where(eq(self.documentId, doc.id)),
   ]);
 
   const seen = new Set<string>();
   const out: RelatedDoc[] = [];
   for (const [list, relation] of [
     [bases, "base"],
+    [raisedFor, "for"],
+    [ordered, "ordered"],
     [children, "child"],
     [traced, "child"],
   ] as const) {
@@ -357,6 +376,8 @@ export type EditorHeader = {
   remarks: string | null;
   internalNotes: string | null;
   isReserve: boolean;
+  /** Bills: the supplier's own invoice number. */
+  supplierInvoiceNumber?: string | null;
 };
 
 export type CopyDraft = {
@@ -387,6 +408,9 @@ export async function copyDraft(
   if (doc.type === "sales_order" && doc.status === "draft") {
     return { error: `Confirm ${doc.number} before invoicing it.` };
   }
+  if (doc.type === "purchase_order" && doc.status === "draft") {
+    return { error: `Approve ${doc.number ?? "the purchase order"} before entering a bill against it.` };
+  }
   if (doc.type === "quote" && doc.status === "closed") {
     return { error: `Quote ${doc.number ?? ""} is closed. Reopen it to convert the rest.`.replace("  ", " ") };
   }
@@ -398,9 +422,15 @@ export async function copyDraft(
 
   const [config] = await getDb().select().from(settings).where(eq(settings.id, "singleton"));
   const today = isoDate();
-  const terms = doc.termsDays ?? config?.customerTermsDays ?? 14;
+  const supplierSide = target === "bill" || target === "goods_receipt";
+  const [partnerRow] = supplierSide
+    ? await getDb().select({ terms: customers.supplierTermsDays }).from(customers).where(eq(customers.id, doc.partnerId))
+    : [];
+  const terms = supplierSide
+    ? (partnerRow?.terms ?? config?.supplierTermsDays ?? 30)
+    : (doc.termsDays ?? config?.customerTermsDays ?? 14);
   const due =
-    target === "invoice"
+    target === "invoice" || target === "bill"
       ? isoDate(terms)
       : target === "sales_order"
         ? (doc.type === "quote" ? isoDate(14) : doc.dueDate)
@@ -414,10 +444,11 @@ export async function copyDraft(
       partnerId: doc.partnerId,
       partnerName: doc.partnerName,
       contactId: doc.contactId,
-      reference: doc.reference,
+      // A bill's reference is the PO it pays for.
+      reference: target === "bill" ? doc.number : doc.reference,
       docDate: today,
       dueDate: due,
-      termsDays: doc.termsDays,
+      termsDays: supplierSide ? terms : doc.termsDays,
       shipToText: doc.shipToText,
       ownerId: doc.ownerId,
       projectId: doc.projectId,
@@ -457,17 +488,20 @@ export async function documentsForProject(projectId: string) {
 }
 
 /** Numbers for the rail: orders needing stock ordered, invoices overdue. */
-export async function salesCounts(): Promise<{ toOrder: number; overdue: number }> {
+export async function salesCounts(): Promise<{ toOrder: number; overdue: number; inTransit: number }> {
   const access = await getAccess();
   const scope = customerScope(access, documents.partnerId);
   const [row] = await getDb()
     .select({
       toOrder: sql<number>`count(*) filter (where ${documents.type} = 'sales_order' and ${documents.status} = 'open' and ${documents.fulfilment} = 'to_order')::int`,
       overdue: sql<number>`count(*) filter (where ${documents.type} = 'invoice' and ${documents.status} = 'open' and ${documents.amountDue} > 0 and ${documents.dueDate} < ${isoDate()})::int`,
+      inTransit: sql<number>`count(*) filter (where ${documents.type} = 'purchase_order' and ${documents.status} = 'open'
+        and coalesce(${documents.fulfilment}, '') <> 'received'
+        and exists (select 1 from shipments s where s.document_id = ${documents.id} and s.receipt_id is null))::int`,
     })
     .from(documents)
-    .where(and(inArray(documents.type, ["sales_order", "invoice"]), scope));
-  return row ?? { toOrder: 0, overdue: 0 };
+    .where(and(inArray(documents.type, ["sales_order", "invoice", "purchase_order"]), scope));
+  return row ?? { toOrder: 0, overdue: 0, inTransit: 0 };
 }
 
 /** Sync health for Settings: how many documents need a person. */

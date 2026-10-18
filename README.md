@@ -240,9 +240,11 @@ Unlinking stops the sync and deletes nothing on either side.
 
 ## 6a. Sales and Xero
 
-Design: [`docs/sales-erp-spec.md`](docs/sales-erp-spec.md). Phase A is built:
-items, quotes, sales orders and invoices. Purchasing (phase B) and reserve
-invoices, deliveries and payments (phase C) follow.
+Design: [`docs/sales-erp-spec.md`](docs/sales-erp-spec.md). Phases A and B are
+built: items, quotes, sales orders and invoices; purchase orders, receipts,
+bills, stock allocation and couriers' tracking. From phase C, reserve invoices
+("goods to follow") and deliveries are built too; payments entry, webhooks and
+sync health follow.
 
 **Xero owns the numbers and the sending.** Saving a quote or invoice creates it
 in Xero as a DRAFT and copies Xero's number back (QU-…, INV-…). Send it from
@@ -267,12 +269,38 @@ documents, and pushes anything waiting, serially and within Xero's rate limit.
 Vercel's Hobby plan only runs crons daily; on it, use **Sync now** in Settings
 or Refresh on a document.
 
+**Purchasing.** A confirmed sales order raises one draft PO per supplier
+(**Raise purchase orders**), each pushed to Xero for its PO number with the job
+in its Reference. Approve and send POs from Xero. On a PO: **Add shipment**
+records the courier (AusPost, StarTrack, TNT, CouriersPlease, Aramex, DHL, Toll,
+Sendle or a typed link) — it shows as "Shipped, in transit" on the PO, on the
+sales lines it was bought for and on the lists, and goes into the Xero PO's
+history. **Receive** books goods in (GR-…) and sets them aside for the line
+they were ordered for; **Enter bill** creates the Xero bill under the
+supplier's invoice number, with "Goods arrived with this invoice" to receive
+in the same step. Bill and receipt come in either order. A PO closes once it is
+received and billed; a PO fully billed here becomes BILLED in Xero. Stock is
+counted as quantities only (on hand, allocated, available on each item), for
+items marked **Physical goods**; admins can correct a count on the item page.
+
+**Reserve invoices and deliveries.** An invoice can be **goods to follow**: the
+customer is billed (and may already have paid) and the goods go out later on a
+delivery (DN-…) from the invoice page, with a note on the Xero invoice. Linking
+a PO to an invoice makes it one. That is how an invoice raised and paid in Xero
+before the stock was bought — imported, say — is carried through: import the
+invoice, the PO and its bill, link the PO to the invoice, add the tracking,
+receive, deliver.
+
 **Import from Xero** (Sales → Import from Xero, staff only) brings existing
 Xero records in so work carries on here: match Xero contacts to business
 partners (by stored link, ABN or email; a name-only match is always a person's
-call), import items, then quotes and invoices — open ones by default, or by
-date range or number (e.g. INV-0028). Re-running updates in place. It only
-reads Xero: nothing is created or changed there by importing. See spec §8.8.
+call), import items, then quotes, invoices, purchase orders and bills — open ones by
+default, or by date range or number (e.g. INV-0028, PO-0011; a bill is found by
+the supplier's number or by the PO number in its Reference). A bill whose
+Reference names one of the supplier's POs here is entered against it. Link an
+imported PO to the sales order or invoice it was bought for from the PO's
+"Bought for" card. Re-running updates in place. It only reads Xero: nothing is
+created or changed there by importing. See spec §8.8.
 
 **Testing.** Use the Xero demo company, never the live organisation. A Neon
 branch made from production carries production's Xero tokens, and Xero refresh
@@ -281,7 +309,7 @@ connection. Delete the `xero_connection` row on any test branch before running
 the app against it, then connect the demo company there.
 
 ```bash
-npm test    # totals, copy-to, line states, Xero payload mapping and import mapping
+npm test    # totals, copy-to, line states, purchasing rules, Xero payload mapping and import mapping
 ```
 
 ---

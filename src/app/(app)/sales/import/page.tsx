@@ -54,14 +54,14 @@ export default async function ImportFromXeroPage({ searchParams }: { searchParam
       <PageHeader
         title="Import from Xero"
         crumbs={[{ label: "Sales" }, { label: "Import from Xero" }]}
-        description="Bring what is already in Xero into The Gangway and carry on from there. Match contacts to business partners first; their quotes and invoices follow. Importing only reads Xero — nothing is created or changed there."
+        description="Bring what is already in Xero into The Gangway and carry on from there. Match contacts to business partners first; their quotes, invoices, purchase orders and bills follow. Importing only reads Xero — nothing is created or changed there."
       />
       <PageBody className="flex flex-col gap-4">
         {!connection ? (
           <div className="rounded-[10px] border border-[var(--border)] bg-[var(--surface)]">
             <EmptyState
               title="Connect Xero first"
-              description="The import reads contacts, items, quotes and invoices from Xero. An admin can connect it in Settings."
+              description="The import reads contacts, items, quotes, invoices, purchase orders and bills from Xero. An admin can connect it in Settings."
               action={<ButtonLink href="/settings#sales">Open settings</ButtonLink>}
             />
           </div>
@@ -121,7 +121,7 @@ async function ContactsTab({ params, canWrite }: { params: Search; canWrite: boo
           <EmptyState
             compact
             title={params.q || (params.show && params.show !== "decide") ? "Nothing matches that" : "Every contact is decided"}
-            description="Each Xero contact is linked to a business partner or skipped. Move on to items, then quotes and invoices."
+            description="Each Xero contact is linked to a business partner or skipped. Move on to items, then documents."
             action={<ButtonLink href="/sales/import?tab=items">Items</ButtonLink>}
           />
         </div>

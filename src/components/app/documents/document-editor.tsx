@@ -19,6 +19,7 @@ import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { Badge } from "@/components/ui/badge";
 import { ButtonLink, Button } from "@/components/ui/button";
 import {
+  CheckboxField,
   FormRow,
   FormSection,
   SelectField,
@@ -116,6 +117,8 @@ export function DocumentEditor(props: EditorProps) {
     [props.taxRates],
   );
   const hasBases = lines.some((l) => l.baseLineId);
+  // A PO's supplier is fixed after the first receipt or bill (§6.3).
+  const supplierFixed = props.type === "purchase_order" && props.lines.some((l) => l.drawn > 0);
 
   // Unsaved edits are not lost to a stray click on a link or a closed tab.
   React.useEffect(() => {
@@ -213,7 +216,7 @@ export function DocumentEditor(props: EditorProps) {
     touch();
     const defaults = await loadPartnerDefaults(option.id, side);
     setPartner(defaults);
-    if (defaults && props.type === "invoice") {
+    if (defaults && (props.type === "invoice" || props.type === "bill")) {
       setTermsDays(String(defaults.termsDays));
       setDueDate(addDays(docDate, defaults.termsDays));
     }
@@ -283,8 +286,11 @@ export function DocumentEditor(props: EditorProps) {
               {partner ? (
                 <div className="flex h-9.5 items-center justify-between gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-3 text-sm">
                   <span className="truncate font-medium text-[var(--text)]">{partner.name}</span>
-                  {hasBases || locked ? (
-                    <Lock className="size-3.5 text-[var(--text-faint)]" aria-label="Fixed by the source document" />
+                  {hasBases || locked || supplierFixed ? (
+                    <Lock
+                      className="size-3.5 text-[var(--text-faint)]"
+                      aria-label={supplierFixed ? "Fixed once goods are received or billed" : "Fixed by the source document"}
+                    />
                   ) : (
                     <button
                       type="button"
@@ -346,13 +352,13 @@ export function DocumentEditor(props: EditorProps) {
                 readOnly={locked}
                 onChange={(e) => {
                   setDocDate(e.target.value);
-                  if (props.type === "invoice" && termsDays !== "" && e.target.value) {
+                  if ((props.type === "invoice" || props.type === "bill") && termsDays !== "" && e.target.value) {
                     setDueDate(addDays(e.target.value, Number(termsDays)));
                   }
                 }}
               />
             </Field>
-            {props.type === "invoice" ? (
+            {props.type === "invoice" || props.type === "bill" ? (
               <Field label="Terms (days)" hint="0 means due on the day" htmlFor="doc-termsDays">
                 <Input
                   id="doc-termsDays"
@@ -387,11 +393,43 @@ export function DocumentEditor(props: EditorProps) {
             ) : null}
           </FormRow>
 
+          {props.type === "bill" ? (
+            <FormRow cols={2}>
+              <TextField
+                name="supplierInvoiceNumber"
+                id="doc-supplierInvoiceNumber"
+                label="Supplier's invoice number"
+                required
+                readOnly={locked}
+                hint="As printed on their invoice. It becomes the bill's number in Xero."
+                defaultValue={props.header.supplierInvoiceNumber ?? ""}
+              />
+              {!props.documentId && hasBases ? (
+                <div className="flex flex-col justify-end">
+                  <CheckboxField
+                    name="goodsArrived"
+                    id="doc-goodsArrived"
+                    label="Goods arrived with this invoice"
+                    hint="Also books the goods in, as a receipt against the purchase order."
+                  />
+                </div>
+              ) : null}
+            </FormRow>
+          ) : null}
+
           <FormRow cols={2}>
             <TextField
               name="reference" id="doc-reference"
               label={side === "customer" ? "Customer reference" : "Reference"}
-              hint={side === "customer" ? "Their PO number, if they gave one" : undefined}
+              hint={
+                side === "customer"
+                  ? "Their PO number, if they gave one"
+                  : props.type === "purchase_order"
+                    ? "Xero shows it on the PO. Raised from an order, it names the job."
+                    : props.type === "bill"
+                      ? "The purchase order number, so Xero shows which order it pays for"
+                      : undefined
+              }
               defaultValue={props.header.reference ?? ""}
             />
             <SelectField
@@ -415,14 +453,15 @@ export function DocumentEditor(props: EditorProps) {
                 ...projectOptions.map((p) => ({ value: p.id, label: p.name })),
               ]}
             />
-            {locked ? null : (
+            {locked || props.type === "bill" ? null : (
               <TextAreaField
                 key={`ship-${partner?.id ?? "none"}`}
                 name="shipToText" id="doc-shipToText"
-                label={side === "customer" ? "Deliver to" : "Deliver to"}
+                label="Deliver to"
+                hint={props.type === "purchase_order" ? "Where the supplier sends it. Printed on the PO." : undefined}
                 rows={2}
                 className="[&_textarea]:min-h-16"
-                defaultValue={props.header.shipToText ?? partner?.shipTo ?? ""}
+                defaultValue={props.header.shipToText ?? (side === "customer" ? partner?.shipTo : null) ?? ""}
               />
             )}
           </FormRow>
@@ -439,9 +478,9 @@ export function DocumentEditor(props: EditorProps) {
             {locked ? null : (
               <TextAreaField
                 name="remarks" id="doc-remarks"
-                label="Remarks"
+                label={props.type === "purchase_order" ? "Delivery instructions" : "Remarks"}
                 rows={2}
-                hint="Kept with the document here"
+                hint={props.type === "purchase_order" ? "Printed on the PO in Xero" : "Kept with the document here"}
                 defaultValue={props.header.remarks ?? ""}
               />
             )}

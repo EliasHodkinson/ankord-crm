@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { and, eq, isNull, ne } from "drizzle-orm";
 import { z } from "zod";
-import { getDb } from "@/lib/db";
+import { getDb, withTransaction } from "@/lib/db";
+import { followItemStockFlag } from "./documents-core";
 import { items } from "@/lib/db/schema";
 import { ReadOnlyError, requireMember } from "@/lib/auth/session";
 import { AccessDenied, assertCustomer, assertStaff } from "@/lib/access";
@@ -91,6 +92,7 @@ export async function saveItem(
           .values({ ...values, xeroSyncState: "pending", createdById: user.id })
           .returning();
     if (!saved) return fail("That item no longer exists.");
+    if (itemId) await withTransaction((tx) => followItemStockFlag(tx, saved.id));
 
     await logActivity({
       entityType: "item",

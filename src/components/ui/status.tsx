@@ -244,6 +244,21 @@ export const LINE_STATE: Record<string, Entry> = {
   done: { label: "Done", tone: "ok" },
 };
 
+/** Per reserve-invoice stock line (lib/sales/fulfilment.ts#reserveLineState). */
+export const RESERVE_LINE_STATE: Record<string, Entry> = {
+  to_order: { label: "To order", tone: "warn" },
+  on_order: { label: "On order", tone: "info" },
+  ready: { label: "Ready to deliver", tone: "ok" },
+  delivered: { label: "Delivered", tone: "ok" },
+};
+
+/** A courier shipment against a PO (lib/sales/purchasing.ts#shipmentState). */
+export const SHIPMENT_STATE: Record<string, Entry> = {
+  in_transit: { label: "Shipped, in transit", tone: "info" },
+  overdue: { label: "Shipped, past ETA", tone: "warn" },
+  arrived: { label: "Arrived", tone: "ok" },
+};
+
 export const QUOTE_OUTCOME: Record<string, Entry> = {
   accepted: { label: "Accepted", tone: "ok" },
   declined: { label: "Declined", tone: "muted" },

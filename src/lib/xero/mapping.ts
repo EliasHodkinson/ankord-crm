@@ -47,6 +47,18 @@ export type MapDoc = {
    * from here, so it needs no lost-create marker on its Reference.
    */
   imported?: boolean;
+  /* Purchasing (phase B). */
+  shipToText?: string | null;
+  contactName?: string | null;
+  remarks?: string | null;
+  /** Bills: the supplier's own invoice number, which is Xero's InvoiceNumber on ACCPAY. */
+  supplierInvoiceNumber?: string | null;
+  /** Bills: the PO it was entered against, which goes into Reference. */
+  purchaseOrderNumber?: string | null;
+  /** Partner name, for a PO raised for a sales order ("SO-00017 · Maple Street"). */
+  customerName?: string | null;
+  /** POs: every line fully billed here, so Xero's PO should be BILLED. */
+  fullyBilled?: boolean;
   brandingThemeId: string | null;
 };
 
@@ -263,5 +275,90 @@ export function itemPayload(item: {
 /** "Converted to sales order SO-00017 in The Gangway." and friends. */
 export const HISTORY = {
   quoteConverted: (target: string) => `Converted to ${target} in The Gangway.`,
+  poRaised: (salesNumber: string, customer: string) => `Raised for ${salesNumber} (${customer}) in The Gangway.`,
+  shipped: (what: string) => `Shipped: ${what}. Tracked in The Gangway.`,
+  received: (what: string, receipt: string, day: string, full: boolean) =>
+    `Received ${what} (${receipt}) on ${day}.${full ? " Fully received." : ""}`,
+  delivered: (what: string, delivery: string, day: string, full: boolean) =>
+    `Delivered ${what} (${delivery}) on ${day}.${full ? " All goods delivered." : ""}`,
+  goodsToFollow: (salesNumber: string | null) =>
+    `Reserve invoice: goods to follow. Delivery tracked in The Gangway${salesNumber ? ` (${salesNumber})` : ""}.`,
+  cancelled: (number: string) => `${number} cancelled in The Gangway.`,
   created: (documentId: string) => `Created in The Gangway (gw:${documentId}).`,
 } as const;
+
+/* ── purchasing (phase B) ────────────────────────────────────────── */
+
+/** Xero's limits on the PO text fields Gangway fills. */
+const PO_LIMITS = { attention: 255, instructions: 500, address: 500 } as const;
+
+/**
+ * The Xero PO status Gangway's state calls for: approved is AUTHORISED, fully
+ * billed here is BILLED, cancelled is DELETED. Never moves Xero back from
+ * BILLED, which a bill entered in Xero sets.
+ */
+export function purchaseOrderStatusFor(doc: Pick<MapDoc, "status" | "xeroStatus" | "fullyBilled">): string {
+  if (doc.status === "cancelled") return "DELETED";
+  if (doc.status === "draft") return "DRAFT";
+  if (doc.xeroStatus === "BILLED" || doc.fullyBilled) return "BILLED";
+  return "AUTHORISED";
+}
+
+/**
+ * A PO's Reference carries the job ("SO-00017 · Maple Street Kitchens"), or
+ * whatever was typed, and Gangway's marker so a lost create can be found.
+ */
+export function purchaseOrderReference(doc: MapDoc): string | null {
+  const job = doc.salesOrderNumber
+    ? [doc.salesOrderNumber, doc.customerName].filter(Boolean).join(" · ")
+    : null;
+  const typed = doc.reference?.trim() || null;
+  return buildReference({
+    customerRef: typed && job && typed.includes(doc.salesOrderNumber!) ? null : typed,
+    salesOrderNumber: typed && job && typed.includes(doc.salesOrderNumber!) ? typed : job,
+    marker: doc.imported ? null : markerFor(doc.id),
+  });
+}
+
+export function purchaseOrderPayload(doc: MapDoc, lines: MapLine[]) {
+  return {
+    ...(doc.xeroId ? { PurchaseOrderID: doc.xeroId } : {}),
+    Contact: { ContactID: doc.xeroContactId },
+    Date: doc.docDate,
+    ...(doc.dueDate ? { DeliveryDate: doc.dueDate } : {}),
+    ...(doc.shipToText ? { DeliveryAddress: doc.shipToText.slice(0, PO_LIMITS.address) } : {}),
+    ...(doc.contactName ? { AttentionTo: doc.contactName.slice(0, PO_LIMITS.attention) } : {}),
+    ...(doc.remarks ? { DeliveryInstructions: doc.remarks.slice(0, PO_LIMITS.instructions) } : {}),
+    Reference: purchaseOrderReference(doc) ?? undefined,
+    LineAmountTypes: LINE_AMOUNT_TYPES[doc.amountsAre],
+    CurrencyCode: "AUD",
+    Status: purchaseOrderStatusFor(doc),
+    LineItems: toLineItems(lines, doc.amountsAre),
+    ...(doc.brandingThemeId ? { BrandingThemeID: doc.brandingThemeId } : {}),
+  };
+}
+
+/** A supplier bill (ACCPAY). Its InvoiceNumber is the supplier's; Reference is the PO. */
+export function billPayload(doc: MapDoc, lines: MapLine[]) {
+  return {
+    ...(doc.xeroId ? { InvoiceID: doc.xeroId } : {}),
+    Type: "ACCPAY",
+    ...(doc.supplierInvoiceNumber ? { InvoiceNumber: doc.supplierInvoiceNumber } : {}),
+    Contact: { ContactID: doc.xeroContactId },
+    Date: doc.docDate,
+    ...(doc.dueDate ? { DueDate: doc.dueDate } : {}),
+    Reference: billReference(doc) ?? undefined,
+    LineAmountTypes: LINE_AMOUNT_TYPES[doc.amountsAre],
+    CurrencyCode: "AUD",
+    Status: invoiceStatusFor(doc),
+    LineItems: toLineItems(lines, doc.amountsAre),
+  };
+}
+
+/** "PO-0031", plus anything else typed that does not already say it. */
+export function billReference(doc: Pick<MapDoc, "reference" | "purchaseOrderNumber">): string | null {
+  const typed = doc.reference?.trim() || null;
+  const po = doc.purchaseOrderNumber ?? null;
+  if (typed && po && typed.includes(po)) return typed.slice(0, REFERENCE_LIMIT);
+  return buildReference({ customerRef: typed, salesOrderNumber: po });
+}

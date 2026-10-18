@@ -85,6 +85,26 @@ export type RawInvoice = {
   UpdatedDateUTC?: string;
 };
 
+export type RawPurchaseOrder = {
+  PurchaseOrderID: string;
+  PurchaseOrderNumber?: string;
+  Reference?: string;
+  Contact?: RawContactRef;
+  Date?: string;
+  DateString?: string;
+  DeliveryDate?: string;
+  DeliveryDateString?: string;
+  DeliveryAddress?: string;
+  AttentionTo?: string;
+  DeliveryInstructions?: string;
+  Status?: string;
+  CurrencyCode?: string;
+  LineAmountTypes?: string;
+  LineItems?: RawLineItem[];
+  Total?: number;
+  UpdatedDateUTC?: string;
+};
+
 export type ImportedLine = {
   rowType: "item" | "text";
   itemCode: string | null;
@@ -138,15 +158,22 @@ export type ImportedDoc = {
   amountDue: string;
   payments: ImportedPayment[];
   xeroUpdatedAt: Date | null;
+  /** POs: deliver-to, attention and delivery instructions. */
+  shipToText?: string | null;
+  attentionTo?: string | null;
+  remarks?: string | null;
 };
 
 /** Statuses Xero calls dead. These are never offered for import. */
 export const DEAD_STATUSES: ReadonlySet<string> = new Set(["DELETED", "VOIDED"]);
 
 /** What "open" means per source, for the default (no date range) import. */
-export const OPEN_STATUSES: Record<"quote" | "invoice", string[]> = {
+export const OPEN_STATUSES: Record<"quote" | "invoice" | "purchase_order", string[]> = {
   quote: ["DRAFT", "SENT", "ACCEPTED"],
   invoice: ["DRAFT", "SUBMITTED", "AUTHORISED"],
+  // BILLED is still open here while the goods are on their way; the source
+  // limits it to recent ones so years of finished orders don't flood in.
+  purchase_order: ["DRAFT", "SUBMITTED", "AUTHORISED", "BILLED"],
 };
 
 /**
@@ -171,6 +198,13 @@ export function gangwayState(type: ImportDocType, xeroStatus: string): GangwaySt
       default:
         return { status: "draft", quoteOutcome: null };
     }
+  }
+  if (type === "purchase_order") {
+    // Billed in Xero is still open here until it is received; the counters
+    // close it (a PO billed in Xero counts as billed).
+    return s === "AUTHORISED" || s === "BILLED"
+      ? { status: "open", quoteOutcome: null }
+      : { status: "draft", quoteOutcome: null };
   }
   switch (s) {
     case "AUTHORISED":
@@ -342,6 +376,38 @@ export function normaliseInvoice(raw: RawInvoice, rates: Map<string, string>): I
     amountDue: two(raw.AmountDue ?? raw.Total),
     payments: mapPayments(raw.Payments),
     xeroUpdatedAt: xeroTimestamp(raw.UpdatedDateUTC),
+  };
+}
+
+export function normalisePurchaseOrder(raw: RawPurchaseOrder, rates: Map<string, string>): ImportedDoc {
+  const mode = amountsAreFrom(raw.LineAmountTypes);
+  const mapped = mapLines(raw.LineItems ?? [], mode, rates);
+  const status = (raw.Status ?? "DRAFT").toUpperCase();
+  return {
+    type: "purchase_order",
+    xeroId: raw.PurchaseOrderID,
+    number: raw.PurchaseOrderNumber?.trim() || null,
+    xeroStatus: status,
+    state: gangwayState("purchase_order", status),
+    contactId: raw.Contact?.ContactID ?? null,
+    contactName: raw.Contact?.Name ?? "Unknown contact",
+    docDate: xeroDay(raw.DateString, raw.Date),
+    dueDate: xeroDay(raw.DeliveryDateString, raw.DeliveryDate),
+    reference: raw.Reference?.trim() || null,
+    title: null,
+    summary: null,
+    terms: null,
+    currency: raw.CurrencyCode ?? "AUD",
+    amountsAre: mode,
+    ...mapped,
+    xeroTotal: raw.Total !== undefined ? two(raw.Total) : null,
+    amountPaid: "0.00",
+    amountDue: "0.00",
+    payments: [],
+    xeroUpdatedAt: xeroTimestamp(raw.UpdatedDateUTC),
+    shipToText: raw.DeliveryAddress?.trim() || null,
+    attentionTo: raw.AttentionTo?.trim() || null,
+    remarks: raw.DeliveryInstructions?.trim() || null,
   };
 }
 

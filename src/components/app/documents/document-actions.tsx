@@ -14,6 +14,7 @@ import {
   reopenDocument,
   setQuoteOutcome,
 } from "@/lib/actions/documents";
+import { setGoodsToFollow } from "@/lib/actions/purchasing";
 import type { ActionState } from "@/lib/actions/shared";
 import { cn } from "@/lib/utils";
 
@@ -29,6 +30,9 @@ export type DocAction =
       kind: "run";
       id:
         | "approve"
+        | "approve_anyway"
+        | "goods_to_follow"
+        | "goods_with_invoice"
         | "accept"
         | "decline"
         | "confirm"
@@ -41,6 +45,8 @@ export type DocAction =
       primary?: boolean;
       /** Asked before running, when it is hard to undo. */
       confirm?: string;
+      /** The button in the question, when it differs from the action's own label. */
+      confirmLabel?: string;
       danger?: boolean;
     };
 
@@ -48,6 +54,12 @@ function run(id: Extract<DocAction, { kind: "run" }>["id"], documentId: string, 
   switch (id) {
     case "approve":
       return approveDocument(documentId);
+    case "approve_anyway":
+      return approveDocument(documentId, true);
+    case "goods_to_follow":
+      return setGoodsToFollow(documentId, true);
+    case "goods_with_invoice":
+      return setGoodsToFollow(documentId, false);
     case "accept":
       return setQuoteOutcome(documentId, "accepted");
     case "decline":
@@ -144,7 +156,7 @@ export function DocumentActions({ documentId, actions }: { documentId: string; a
               onClick={() => go(asking)}
             >
               {pending ? <Loader2 className="animate-spin" /> : null}
-              {asking.label}
+              {asking.confirmLabel ?? asking.label}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setAsking(null)}>
               Not now

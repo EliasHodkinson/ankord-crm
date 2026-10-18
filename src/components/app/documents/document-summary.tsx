@@ -11,8 +11,8 @@ import { formatMoney, num } from "@/lib/sales/money";
 import { formatDate, isoDate } from "@/lib/utils";
 
 /**
- * Sales documents against one record: a business partner's "Sales" section,
- * or a project's "Commercials" card. Live work first — open orders and
+ * Documents against one record: a business partner's "Sales" or
+ * "Purchasing" section, or a project's "Commercials" card. Live work first — open orders and
  * unpaid invoices — then the recent rest.
  */
 export function DocumentSummary({
@@ -22,6 +22,7 @@ export function DocumentSummary({
   newHref,
   canWrite,
   emptyText,
+  side = "customer",
 }: {
   id?: string;
   title: string;
@@ -30,12 +31,15 @@ export function DocumentSummary({
   newHref: string;
   canWrite: boolean;
   emptyText: string;
+  /** Supplier side: POs and bills, with "New PO". */
+  side?: "customer" | "supplier";
 }) {
   const today = isoDate();
   const live = documents.filter((d) => d.status !== "cancelled");
-  const unpaid = live.filter((d) => d.type === "invoice" && d.status === "open" && num(d.amountDue) > 0);
+  const unpaid = live.filter((d) => (d.type === "invoice" || d.type === "bill") && d.status === "open" && num(d.amountDue) > 0);
   const owed = unpaid.reduce((sum, d) => sum + num(d.amountDue), 0);
-  const openOrders = live.filter((d) => d.type === "sales_order" && d.status === "open");
+  const openOrders = live.filter((d) => (d.type === "sales_order" || d.type === "purchase_order") && d.status === "open");
+  const unpaidLabel = side === "supplier" ? "owed to them" : "unpaid";
 
   return (
     <Card id={id} className="scroll-mt-20">
@@ -43,16 +47,23 @@ export function DocumentSummary({
         title={title}
         meta={
           documents.length === 0
-            ? "No quotes, orders or invoices yet"
+            ? side === "supplier"
+              ? "No purchase orders or bills yet"
+              : "No quotes, orders or invoices yet"
             : [
                 openOrders.length ? `${openOrders.length} open ${openOrders.length === 1 ? "order" : "orders"}` : null,
-                unpaid.length ? `${formatMoney(owed)} unpaid` : null,
+                unpaid.length ? `${formatMoney(owed)} ${unpaidLabel}` : null,
               ]
                 .filter(Boolean)
                 .join(" · ") || `${documents.length} on record`
         }
         action={
-          canWrite ? (
+          canWrite && side === "supplier" ? (
+            <ButtonLink href={`/purchasing/orders/new?${newHref}`} variant="ghost" size="sm">
+              <Plus />
+              Purchase order
+            </ButtonLink>
+          ) : canWrite ? (
             <span className="flex gap-1">
               <ButtonLink href={`/sales/quotes/new?${newHref}`} variant="ghost" size="sm">
                 <Plus />
@@ -86,7 +97,7 @@ export function DocumentSummary({
                     </span>
                   </span>
                   <span className="flex shrink-0 items-center gap-1.5">
-                    {d.type === "sales_order" && d.fulfilment && d.status === "open" ? (
+                    {(d.type === "sales_order" || d.type === "purchase_order" || d.isReserve) && d.fulfilment && d.status !== "cancelled" ? (
                       <StatusBadge map={FULFILMENT} value={d.fulfilment} />
                     ) : null}
                     <Badge tone={status.tone}>{status.label}</Badge>

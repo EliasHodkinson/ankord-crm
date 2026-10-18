@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, withTransaction, type Tx } from "@/lib/db";
 import {
@@ -11,6 +11,9 @@ import {
   items,
   pinnedFiles,
   projects,
+  settings,
+  shipments,
+  stockAllocations,
   type Document,
   type DocumentLine,
 } from "@/lib/db/schema";
@@ -43,6 +46,9 @@ import { XeroAuthError } from "@/lib/xero/auth";
 import { XeroApiError, xeroPdf } from "@/lib/xero/client";
 import { safeFolderName, uploadFile } from "@/lib/graph/sharepoint";
 import { allocateNumber, baseLinesOf, recomputeCounters } from "./documents-core";
+import { poEditProblem } from "@/lib/sales/purchasing";
+import { draftShortfalls } from "@/lib/data/purchasing";
+import { ReceiptRefusal, receiveWithBill } from "@/lib/purchasing/receipts";
 import {
   fail,
   fromZod,
@@ -131,6 +137,8 @@ const headerSchema = z.object({
   terms: optionalText,
   remarks: optionalText,
   internalNotes: optionalText,
+  supplierInvoiceNumber: optionalText,
+  goodsArrived: z.preprocess((v) => v === "on" || v === "true", z.boolean()).default(false),
   version: z.coerce.number().int().optional(),
 });
 
@@ -145,7 +153,11 @@ function editable(doc: Document): "all" | "header" | "none" {
     case "sales_order":
       return doc.status === "closed" ? "none" : "all";
     case "invoice":
+    case "bill":
       return doc.status === "draft" ? "all" : "header";
+    case "purchase_order":
+      // Edits to an approved PO go to Xero too (§6.3); the guards apply.
+      return doc.status === "closed" ? "none" : "all";
     default:
       return "none";
   }
@@ -167,6 +179,7 @@ export async function saveDocument(
   return guarded(async () => {
     const { user } = await requireMember();
     if (!DOC_TYPES[type].available) return fail("That kind of document is not available yet.");
+    if (DOC_TYPES[type].recordOnly) return fail(`A ${typeLabel(type).toLowerCase()} is made from its order, not edited.`);
 
     const parsed = headerSchema.safeParse(Object.fromEntries(formData));
     if (!parsed.success) return fromZod(parsed.error);
@@ -224,6 +237,30 @@ export async function saveDocument(
     if (type === "invoice") {
       const terms = header.termsDays ?? partner.termsDays ?? 14;
       dueDate = dueDate ?? addDays(header.docDate, terms);
+    }
+    if (type === "bill") {
+      const terms = header.termsDays ?? partner.supplierTermsDays ?? 30;
+      dueDate = dueDate ?? addDays(header.docDate, terms);
+      if (!header.supplierInvoiceNumber) {
+        return fail("Enter the supplier's invoice number.", { supplierInvoiceNumber: ["Required"] });
+      }
+      const [clash] = await db
+        .select({ id: documents.id })
+        .from(documents)
+        .where(
+          and(
+            eq(documents.type, "bill"),
+            eq(documents.partnerId, header.partnerId),
+            ne(documents.status, "cancelled"),
+            sql`lower(${documents.supplierInvoiceNumber}) = lower(${header.supplierInvoiceNumber})`,
+            existing ? ne(documents.id, existing.id) : undefined,
+          ),
+        );
+      if (clash) {
+        return fail(`Invoice ${header.supplierInvoiceNumber} from ${partner.name} is already entered.`, {
+          supplierInvoiceNumber: ["Already entered"],
+        });
+      }
     }
     if (DOC_TYPES[type].dueRequired && !dueDate) {
       return fail(`Set the ${DOC_TYPES[type].dueLabel?.toLowerCase()}.`, {
@@ -284,6 +321,9 @@ export async function saveDocument(
         terms: type === "quote" ? header.terms : null,
         remarks: header.remarks,
         internalNotes: header.internalNotes,
+        ...(type === "bill"
+          ? { supplierInvoiceNumber: header.supplierInvoiceNumber, number: header.supplierInvoiceNumber }
+          : {}),
         subtotal: prepared.totals.subtotal,
         taxTotal: prepared.totals.taxTotal,
         total: prepared.totals.total,
@@ -294,7 +334,11 @@ export async function saveDocument(
       let touchedBases: string[] = [];
 
       if (!existing) {
-        const number = LOCAL_SERIES[type] ? await allocateNumber(tx, LOCAL_SERIES[type]!) : null;
+        const number = LOCAL_SERIES[type]
+          ? await allocateNumber(tx, LOCAL_SERIES[type]!)
+          : type === "bill"
+            ? header.supplierInvoiceNumber
+            : null;
         [doc] = await tx
           .insert(documents)
           .values({
@@ -330,6 +374,17 @@ export async function saveDocument(
           .where(eq(documentLines.documentId, existing.id));
         const byId = new Map(current.map((l) => [l.id, l]));
         const keep = new Set(lines.map((l) => l.id).filter(Boolean) as string[]);
+
+        if (type === "purchase_order") {
+          const problem = poEditProblem({
+            status: locked.status,
+            supplierBefore: locked.partnerId,
+            supplierAfter: header.partnerId,
+            before: current.filter((l) => l.rowType === "item"),
+            after: lines,
+          });
+          if (problem) throw new Refusal(problem);
+        }
 
         // Guards: nothing drawn-from may be deleted, or shrink below what was drawn.
         const childCounts = await childrenOf(tx, current.map((l) => l.id));
@@ -401,6 +456,13 @@ export async function saveDocument(
     });
 
     const { doc } = result;
+    let received: Document | null = null;
+    if (type === "bill" && !existing && header.goodsArrived) {
+      received = await receiveWithBill(doc, user.id).catch((error) => {
+        if (error instanceof ReceiptRefusal) throw new Refusal(error.message);
+        throw error;
+      });
+    }
     await record(
       doc,
       existing ? "document_updated" : "document_created",
@@ -436,13 +498,14 @@ export async function saveDocument(
       }
     }
 
-    let message = "Saved.";
+    let message = received ? `Saved, and received on ${received.number}.` : "Saved.";
     if (isXeroType(type)) {
       if (!existing || !existing.xeroId) {
         const outcome = await pushNow(doc.id);
-        if (outcome?.state === "synced") message = "Saved and sent to Xero as a draft.";
-        else if (outcome?.message) message = `Saved. Not in Xero yet: ${outcome.message}`;
-        else message = "Saved. Xero is taking a moment; the number will appear shortly.";
+        const also = received ? ` Received on ${received.number}.` : "";
+        if (outcome?.state === "synced") message = `Saved and sent to Xero as a draft.${also}`;
+        else if (outcome?.message) message = `Saved. Not in Xero yet: ${outcome.message}${also}`;
+        else message = `Saved. Xero is taking a moment; the number will appear shortly.${also}`;
       } else {
         pushLater(doc.id);
       }
@@ -556,6 +619,9 @@ async function lockBaseLines(tx: Tx, lines: LineInput[], partnerId: string) {
     if (r.docType === "sales_order" && r.docStatus !== "open") {
       throw new Refusal(`Confirm ${source} before invoicing it.`);
     }
+    if (r.docType === "purchase_order" && r.docStatus !== "open") {
+      throw new Refusal(`Approve ${source} before entering a bill against it.`);
+    }
     map.set(r.line.id, {
       ...r.line,
       docType: r.docType,
@@ -668,13 +734,34 @@ async function liveChildren(documentId: string) {
 
 /* ── status changes ──────────────────────────────────────────────── */
 
-/** Approve a draft invoice: AUTHORISED in Xero, lines locked, goods delivered. */
-export async function approveDocument(id: string): Promise<ActionState> {
+/**
+ * Approve a draft invoice, PO or bill: AUTHORISED in Xero, lines locked.
+ * A normal invoice's stock goes out when it is approved, consuming what was
+ * allocated; if less is allocated than is going out, it asks first (§4.5)
+ * unless `force` says the person saw the warning and went ahead.
+ */
+export async function approveDocument(id: string, force = false): Promise<ActionState> {
   return guarded(async () => {
     await requireMember();
     const doc = await loadDoc(id);
-    if (doc.type !== "invoice") return fail("Only invoices are approved here.");
+    if (!["invoice", "purchase_order", "bill"].includes(doc.type)) {
+      return fail("Only invoices, purchase orders and bills are approved.");
+    }
     if (doc.status !== "draft") return fail(`${label(doc)} is already approved.`);
+    if (doc.type === "bill") {
+      const [config] = await getDb().select({ allow: settings.allowBillApproval }).from(settings).where(eq(settings.id, "singleton"));
+      if (config && !config.allow) return fail("Bills are approved in Xero here. Open it in Xero to approve it.");
+    }
+    if (doc.type === "invoice" && !doc.isReserve && !force) {
+      const short = await draftShortfalls(id);
+      if (short.length) {
+        const first = short[0];
+        return fail(
+          `Only ${formatQty(first.allocated)} of ${formatQty(first.quantity)} ${first.label} allocated. Approve anyway, or make it a reserve invoice and deliver later.`,
+          { shortfall: short.map((s) => s.label) },
+        );
+      }
+    }
 
     const saved = await withTransaction(async (tx) => {
       const [row] = await tx
@@ -688,31 +775,29 @@ export async function approveDocument(id: string): Promise<ActionState> {
         })
         .where(and(eq(documents.id, id), eq(documents.status, "draft")))
         .returning();
-      if (!row) throw new Refusal("Someone else changed this invoice. Reload to see the latest.");
-      // A normal invoice delivers its stock lines when it is posted (§5.3).
-      // Phase B adds allocation consumption and the shortfall warning here.
+      if (!row) throw new Refusal("Someone else changed this document. Reload to see the latest.");
+      // A normal invoice delivers its stock lines when it is posted (§5.3);
+      // recomputing its order lines consumes their allocations.
       await recomputeCounters(tx, await baseLinesOf(tx, [id]));
       return row;
     });
 
-    if (saved.isReserve) {
+    if (saved.type === "invoice" && saved.isReserve) {
       const [order] = saved.salesOrderId
         ? await getDb().select({ number: documents.number }).from(documents).where(eq(documents.id, saved.salesOrderId))
         : [];
-      await queueHistoryNote(
-        id,
-        `Reserve invoice: goods to follow. Delivery tracked in The Gangway${order?.number ? ` (${order.number})` : ""}.`,
-      );
+      await queueHistoryNote(id, HISTORY.goodsToFollow(order?.number ?? null));
     }
     await record(saved, "document_approved", `Approved ${label(saved)}`);
     const outcome = saved.xeroId ? (pushLater(id), null) : await pushNow(id);
     revalidateDoc(saved);
+    const sendFrom = saved.type === "bill" ? "" : " Send it from Xero.";
     return {
       ok: true,
       message:
         outcome && outcome.state !== "synced"
           ? `Approved. Not in Xero yet: ${outcome.message ?? "it will be retried."}`
-          : "Approved. Send it from Xero.",
+          : `Approved.${sendFrom}`,
     };
   });
 }
@@ -814,7 +899,7 @@ export async function closeDocument(id: string): Promise<ActionState> {
   return guarded(async () => {
     await requireMember();
     const doc = await loadDoc(id);
-    if (!["quote", "sales_order"].includes(doc.type)) return fail("That document closes by itself.");
+    if (!["quote", "sales_order", "purchase_order"].includes(doc.type)) return fail("That document closes by itself.");
     if (doc.status !== "open" && doc.status !== "draft") return fail(`${label(doc)} is ${doc.status}.`);
     const [saved] = await getDb()
       .update(documents)
@@ -830,6 +915,10 @@ export async function closeDocument(id: string): Promise<ActionState> {
       .returning();
     if (saved.type === "quote" && saved.xeroId) {
       await queueHistoryNote(id, "Closed in The Gangway; nothing more will be converted from it.");
+      notesLater(id);
+    }
+    if (saved.type === "purchase_order" && saved.xeroId) {
+      await queueHistoryNote(id, "Closed in The Gangway; nothing more is expected against it.");
       notesLater(id);
     }
     await record(saved, "document_closed", `Closed ${label(saved)}`);
@@ -872,13 +961,33 @@ export async function cancelDocument(id: string, reason?: string): Promise<Actio
     const { user } = await requireMember();
     const doc = await loadDoc(id);
     if (doc.status === "cancelled") return fail("Already cancelled.");
-    if (doc.status === "closed" && doc.type !== "invoice") return fail(`${label(doc)} is closed. Reopen it first.`);
+    const money = doc.type === "invoice" || doc.type === "bill";
+    if (doc.status === "closed" && !money) return fail(`${label(doc)} is closed. Reopen it first.`);
     if (doc.status === "draft") return fail("Drafts are deleted rather than cancelled.");
-    if (doc.type === "invoice" && toScaled(doc.amountPaid, 2) > BigInt(0)) {
+    if (money && toScaled(doc.amountPaid, 2) > BigInt(0)) {
       return fail(`${label(doc)} has payments applied. Remove them in Xero first.`);
     }
     const children = await liveChildren(id);
     if (children.length) return fail(`Cancel ${label(children[0])} first.`);
+    if (doc.type === "goods_receipt") {
+      const [delivered] = await getDb()
+        .select({ n: sql<number>`count(*)::int` })
+        .from(stockAllocations)
+        .innerJoin(documentLines, eq(documentLines.id, stockAllocations.receiptLineId))
+        .where(and(eq(documentLines.documentId, id), sql`${stockAllocations.consumed} > 0`));
+      if (delivered && delivered.n > 0) {
+        return fail(`Stock from ${doc.number ?? "this receipt"} has already gone out to the customer, so it can't be cancelled.`);
+      }
+    }
+    if (doc.type === "purchase_order") {
+      const [linkedLive] = await getDb()
+        .select({ n: sql<number>`count(*)::int` })
+        .from(shipments)
+        .where(and(eq(shipments.documentId, id), isNull(shipments.receiptId)));
+      if (linkedLive && linkedLive.n > 0) {
+        return fail(`${label(doc)} has a shipment on its way. Remove the shipment first if it isn't coming.`);
+      }
+    }
 
     const saved = await withTransaction(async (tx) => {
       const [row] = await tx
@@ -893,9 +1002,33 @@ export async function cancelDocument(id: string, reason?: string): Promise<Actio
         })
         .where(eq(documents.id, id))
         .returning();
+      const own = await tx.select({ id: documentLines.id }).from(documentLines).where(eq(documentLines.documentId, id));
+      if (doc.type === "goods_receipt") {
+        // Its stock was never here after all: what it allocated goes too.
+        const released = await tx
+          .update(stockAllocations)
+          .set({ releasedAt: new Date(), releasedById: user.id })
+          .where(and(inArray(stockAllocations.receiptLineId, own.map((l) => l.id)), isNull(stockAllocations.releasedAt)))
+          .returning({ line: stockAllocations.salesOrderLineId });
+        await tx.update(shipments).set({ receiptId: null }).where(eq(shipments.receiptId, id));
+        await recomputeCounters(tx, released.map((r) => r.line));
+      }
       await recomputeCounters(tx, await baseLinesOf(tx, [id]));
       return row;
     });
+
+    // A receipt or delivery cancelled here is noted on the Xero document it moved.
+    if (doc.type === "goods_receipt" || doc.type === "delivery") {
+      const rows = await getDb().execute<{ id: string; xero_id: string | null }>(sql`
+        select distinct p.id, p.xero_id from document_lines c
+        join document_lines b on b.id = c.base_line_id
+        join documents p on p.id = b.document_id
+        where c.document_id = ${id}`);
+      for (const parent of rows.rows) {
+        await queueHistoryNote(parent.id, HISTORY.cancelled(doc.number ?? label(doc)));
+        if (parent.xero_id) notesLater(parent.id);
+      }
+    }
 
     if (saved.xeroId) pushLater(id);
     // Quotes it drew from reopen; let Xero hear about any that changed.
@@ -904,7 +1037,7 @@ export async function cancelDocument(id: string, reason?: string): Promise<Actio
     return {
       ok: true,
       message:
-        doc.type === "invoice"
+        money
           ? saved.xeroId
             ? "Voided here, and in Xero shortly."
             : "Voided. It never reached Xero, so there is nothing to void there."
@@ -919,6 +1052,9 @@ export async function duplicateDocument(id: string): Promise<ActionState> {
     const { user } = await requireMember();
     const doc = await loadDoc(id);
     if (!DOC_TYPES[doc.type].available) return fail("That kind of document can't be duplicated yet.");
+    if (["bill", "goods_receipt", "delivery"].includes(doc.type)) {
+      return fail(`A ${typeLabel(doc.type).toLowerCase()} records something that happened once, so it isn't duplicated.`);
+    }
 
     const copy = await withTransaction(async (tx) => {
       const lines = await tx

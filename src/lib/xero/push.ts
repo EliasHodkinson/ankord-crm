@@ -18,10 +18,12 @@ import { toCents } from "@/lib/sales/money";
 import { readXeroConnection, XeroAuthError } from "./auth";
 import { XeroApiError, xeroSend, parseXeroDate } from "./client";
 import {
+  billPayload,
   invoicePayload,
   invoiceStatusPayload,
   itemPayload,
   markerFor,
+  purchaseOrderPayload,
   quotePayload,
   type MapDoc,
   type MapLine,
@@ -46,9 +48,32 @@ import {
 
 export type PushOutcome = { state: XeroSyncState; message: string | null };
 
-const RESOURCE: Partial<Record<DocType, "Quotes" | "Invoices">> = {
+type Resource = "Quotes" | "Invoices" | "PurchaseOrders";
+
+const RESOURCE: Partial<Record<DocType, Resource>> = {
   quote: "Quotes",
   invoice: "Invoices",
+  purchase_order: "PurchaseOrders",
+  bill: "Invoices",
+};
+
+function payloadFor(type: DocType, map: MapDoc, lines: MapLine[]) {
+  switch (type) {
+    case "quote":
+      return quotePayload(map, lines);
+    case "purchase_order":
+      return purchaseOrderPayload(map, lines);
+    case "bill":
+      return billPayload(map, lines);
+    default:
+      return invoicePayload(map, lines);
+  }
+}
+
+const ID_KEY: Record<Resource, "QuoteID" | "InvoiceID" | "PurchaseOrderID"> = {
+  Quotes: "QuoteID",
+  Invoices: "InvoiceID",
+  PurchaseOrders: "PurchaseOrderID",
 };
 
 /* ── logging ─────────────────────────────────────────────────────── */
@@ -97,7 +122,7 @@ async function load(documentId: string): Promise<Loaded> {
   const [doc] = await db.select().from(documents).where(eq(documents.id, documentId));
   if (!doc) throw new Blocked("That document no longer exists.");
 
-  const [[partner], [config], rows, [salesOrder]] = await Promise.all([
+  const [[partner], [config], rows, [salesOrder], [purchaseOrder]] = await Promise.all([
     db
       .select({ name: customers.name, xeroContactId: customers.xeroContactId })
       .from(customers)
@@ -111,9 +136,20 @@ async function load(documentId: string): Promise<Loaded> {
       .orderBy(asc(documentLines.position)),
     doc.salesOrderId
       ? db
-          .select({ number: documents.number })
+          .select({ number: documents.number, partnerName: documents.partnerName })
           .from(documents)
           .where(eq(documents.id, doc.salesOrderId))
+      : Promise.resolve([] as { number: string | null; partnerName: string }[]),
+    // A bill's Reference is the PO its lines were entered against.
+    doc.type === "bill"
+      ? db
+          .execute<{ number: string | null }>(sql`
+            select po.number from document_lines b
+            join document_lines pl on pl.id = b.base_line_id
+            join documents po on po.id = pl.document_id
+            where b.document_id = ${doc.id} and po.number is not null
+            limit 1`)
+          .then((r) => r.rows)
       : Promise.resolve([] as { number: string | null }[]),
   ]);
 
@@ -183,6 +219,16 @@ async function load(documentId: string): Promise<Loaded> {
       salesOrderNumber: salesOrder?.number ?? null,
       imported: doc.importedAt !== null,
       brandingThemeId: theme ?? null,
+      shipToText: doc.shipToText,
+      contactName: doc.contactName,
+      remarks: doc.remarks,
+      supplierInvoiceNumber: doc.supplierInvoiceNumber,
+      purchaseOrderNumber: purchaseOrder?.number ?? null,
+      customerName: salesOrder?.partnerName ?? null,
+      fullyBilled:
+        doc.type === "purchase_order" &&
+        rows.some((r) => r.line.rowType === "item") &&
+        rows.every((r) => r.line.rowType !== "item" || Number(r.line.qtyBilled) >= Number(r.line.quantity)),
     },
   };
 }
@@ -192,6 +238,8 @@ type XeroDocument = {
   QuoteNumber?: string;
   InvoiceID?: string;
   InvoiceNumber?: string;
+  PurchaseOrderID?: string;
+  PurchaseOrderNumber?: string;
   Status?: string;
   Total?: number;
   AmountPaid?: number;
@@ -200,12 +248,12 @@ type XeroDocument = {
   UpdatedDateUTC?: string;
 };
 
-const xeroIdOf = (x: XeroDocument) => x.QuoteID ?? x.InvoiceID ?? null;
-const xeroNumberOf = (x: XeroDocument) => x.QuoteNumber ?? x.InvoiceNumber ?? null;
+const xeroIdOf = (x: XeroDocument) => x.QuoteID ?? x.InvoiceID ?? x.PurchaseOrderID ?? null;
+const xeroNumberOf = (x: XeroDocument) => x.QuoteNumber ?? x.PurchaseOrderNumber ?? x.InvoiceNumber ?? null;
 
 async function send(
   method: "PUT" | "POST",
-  resource: "Quotes" | "Invoices",
+  resource: Resource,
   path: string,
   body: Record<string, unknown>,
   idempotencyKey: string | undefined,
@@ -247,12 +295,32 @@ async function findLostCreate(loaded: Loaded): Promise<XeroDocument | null> {
     return null;
   }
 
+  if (map.type === "purchase_order") {
+    // Xero's PO listing has no contact filter; recent drafts are few.
+    const data = await xeroSend<{ PurchaseOrders?: (XeroDocument & { Contact?: { ContactID?: string } })[] }>(
+      "GET",
+      `/PurchaseOrders?Status=DRAFT&order=${encodeURIComponent("UpdatedDateUTC DESC")}&page=1`,
+    );
+    const marker = markerFor(map.id);
+    for (const po of data.PurchaseOrders ?? []) {
+      if (
+        po.Reference?.endsWith(marker) &&
+        po.PurchaseOrderID &&
+        (!po.Contact?.ContactID || po.Contact.ContactID === contact) &&
+        !(await taken(po.PurchaseOrderID))
+      ) {
+        return po;
+      }
+    }
+    return null;
+  }
+
   const where = encodeURIComponent(`Contact.ContactID==Guid("${contact}") AND Status=="DRAFT"`);
   const data = await xeroSend<{ Invoices?: XeroDocument[] }>(
     "GET",
     `/Invoices?where=${where}&order=${encodeURIComponent("UpdatedDateUTC DESC")}&page=1`,
   );
-  const reference = invoicePayload(map, loaded.lines).Reference ?? "";
+  const reference = (map.type === "bill" ? billPayload(map, loaded.lines) : invoicePayload(map, loaded.lines)).Reference ?? "";
   for (const inv of data.Invoices ?? []) {
     if (
       (inv.Reference ?? "") === reference &&
@@ -323,8 +391,7 @@ export async function pushDocument(
     const resource = RESOURCE[doc.type];
     if (!resource) return settle(documentId, "local_only", null);
 
-    const payload =
-      resource === "Quotes" ? quotePayload(map, lines) : invoicePayload(map, lines);
+    const payload = payloadFor(doc.type, map, lines);
 
     let result: XeroDocument | null = null;
     let xeroId = doc.xeroId;
@@ -353,6 +420,7 @@ export async function pushDocument(
       const create = { ...body } as Record<string, unknown>;
       delete create.QuoteID;
       delete create.InvoiceID;
+      delete create.PurchaseOrderID;
       result = await send(
         "PUT",
         resource,
@@ -380,7 +448,7 @@ export async function pushDocument(
         options.timeoutMs,
       );
     } else {
-      const update = { ...body, ...(resource === "Quotes" ? { QuoteID: xeroId } : { InvoiceID: xeroId }) };
+      const update = { ...body, [ID_KEY[resource]]: xeroId };
       result = await send("POST", resource, `/${resource}/${xeroId}`, update, undefined, options.timeoutMs);
       await log({ entityType: doc.type, entityId: doc.id, action: "update", httpStatus: 200, xeroId, startedAt });
     }
@@ -619,7 +687,7 @@ export async function drainQueue(budget = 40): Promise<{ pushed: number; notes: 
 
   const waiting = await db.execute<{ id: string }>(sql`
     select d.id from documents d
-    where d.type in ('quote','invoice')
+    where d.type in ('quote','invoice','purchase_order','bill')
       and (
         d.xero_sync_state in ('pending','stale')
         or (d.xero_sync_state = 'pushing' and d.xero_last_attempt_at < now() - interval '2 minutes')
