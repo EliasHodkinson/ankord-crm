@@ -78,6 +78,13 @@
       "when": 1789508332878,
       "tag": "0010_copilot_brief",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792293081921,
+      "tag": "0011_planner_sync",
+      "breakpoints": true
     }
   ]
 }

@@ -40,6 +40,10 @@ before touching anything visual.
   a toggle is not in the FormData at all.
 - "Activity" means a conversation, not an edit. `touchRecords()` sets
   `lastActivityAt`, and that is what going-cold is measured against.
+- A new action that writes a project's phases, steps or name must call
+  `queuePlannerSync(projectId)` (`lib/planner/push.ts`), or the edit only
+  reaches a linked Planner plan on the next poll. Comparisons against the sync
+  base go through `sameValue()` — the base is jsonb, which reorders keys.
 - Charts use the `--chart-*` tokens. The dark ramp is a chosen set of steps, not
   a flip of the light one — see DESIGN.md.
 

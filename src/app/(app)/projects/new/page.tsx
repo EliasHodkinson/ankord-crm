@@ -5,6 +5,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ButtonLink } from "@/components/ui/button";
 import { ProjectForm } from "../project-form";
 import { TemplatePicker } from "../template-picker";
+import { PlanImport } from "../plan-import";
+import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { createProject } from "@/lib/actions/projects";
 import { listTeam } from "@/lib/data/common";
 import { getDb } from "@/lib/db";
@@ -80,6 +82,16 @@ export default async function NewProjectPage({
         >
           <TemplatePicker options={options} />
         </ProjectForm>
+
+        <Card className="mt-6">
+          <CardHeader
+            title="Or start from a Microsoft Planner plan"
+            meta="Its buckets become phases and its tasks become steps, and the two stay in sync"
+          />
+          <CardBody>
+            <PlanImport customers={customerList} defaultCustomerId={customer} />
+          </CardBody>
+        </Card>
       </PageBody>
     </>
   );

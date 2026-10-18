@@ -11,6 +11,7 @@ import { findTemplate } from "@/lib/templates";
 import { autoProvisionFolder } from "./files";
 import { notifyTeams } from "@/lib/notify";
 import { appUrl } from "@/lib/env";
+import { queuePlannerSync } from "@/lib/planner/push";
 import {
   fail,
   fromZod,
@@ -166,6 +167,7 @@ export async function updateProject(
     summary: "Updated project details",
   });
 
+  queuePlannerSync(id);
   revalidatePath(`/projects/${id}`);
   revalidatePath("/projects");
   return { ok: true, message: "Saved." };
@@ -197,6 +199,7 @@ export async function setStepStatus(
     .where(eq(projectSteps.id, stepId));
 
   await touchRecords({ projectId });
+  queuePlannerSync(projectId);
   revalidatePath(`/projects/${projectId}`);
   return { ok: true };
 }
@@ -224,6 +227,7 @@ export async function updateStepDetail(
     .set({ ...values, updatedAt: new Date() })
     .where(eq(projectSteps.id, stepId));
 
+  queuePlannerSync(projectId);
   revalidatePath(`/projects/${projectId}`);
   return { ok: true, message: "Saved." };
 }
@@ -253,6 +257,7 @@ export async function addStep(
 
   await db.insert(projectSteps).values({ ...parsed.data, position: next });
 
+  queuePlannerSync(parsed.data.projectId);
   revalidatePath(`/projects/${parsed.data.projectId}`);
   return { ok: true, message: "Step added." };
 }
@@ -260,6 +265,7 @@ export async function addStep(
 export async function deleteStep(stepId: string, projectId: string): Promise<void> {
   await requireUser();
   await getDb().delete(projectSteps).where(eq(projectSteps.id, stepId));
+  queuePlannerSync(projectId);
   revalidatePath(`/projects/${projectId}`);
 }
 
@@ -285,8 +291,79 @@ export async function addPhase(
     .where(eq(projectPhases.projectId, parsed.data.projectId));
 
   await db.insert(projectPhases).values({ ...parsed.data, position: next });
+  queuePlannerSync(parsed.data.projectId);
   revalidatePath(`/projects/${parsed.data.projectId}`);
   return { ok: true, message: "Phase added." };
+}
+
+/* ── step checklists ──────────────────────────────────────────────── */
+
+/**
+ * Checklist edits read the stored list and write it back whole. Planner caps
+ * a task at 20 checklist items, and so does this, so a synced step can never
+ * hold more than Planner will accept.
+ */
+const CHECKLIST_LIMIT = 20;
+
+async function editChecklist(
+  stepId: string,
+  projectId: string,
+  edit: (
+    items: { id: string; title: string; done: boolean }[],
+  ) => { id: string; title: string; done: boolean }[] | string,
+): Promise<ActionState> {
+  await requireUser();
+  const db = getDb();
+  const [step] = await db
+    .select({ checklist: projectSteps.checklist })
+    .from(projectSteps)
+    .where(and(eq(projectSteps.id, stepId), eq(projectSteps.projectId, projectId)));
+  if (!step) return fail("That step no longer exists.");
+
+  const next = edit(step.checklist);
+  if (typeof next === "string") return fail(next);
+
+  await db
+    .update(projectSteps)
+    .set({ checklist: next, updatedAt: new Date() })
+    .where(eq(projectSteps.id, stepId));
+
+  queuePlannerSync(projectId);
+  revalidatePath(`/projects/${projectId}`);
+  return { ok: true };
+}
+
+export async function addChecklistItem(
+  stepId: string,
+  projectId: string,
+  title: string,
+): Promise<ActionState> {
+  const clean = title.trim();
+  if (!clean) return fail("Type the item first.");
+  return editChecklist(stepId, projectId, (items) =>
+    items.length >= CHECKLIST_LIMIT
+      ? `A step can hold ${CHECKLIST_LIMIT} checklist items — Planner's limit.`
+      : [...items, { id: crypto.randomUUID(), title: clean.slice(0, 100), done: false }],
+  );
+}
+
+export async function toggleChecklistItem(
+  stepId: string,
+  projectId: string,
+  itemId: string,
+  done: boolean,
+): Promise<ActionState> {
+  return editChecklist(stepId, projectId, (items) =>
+    items.map((item) => (item.id === itemId ? { ...item, done } : item)),
+  );
+}
+
+export async function removeChecklistItem(
+  stepId: string,
+  projectId: string,
+  itemId: string,
+): Promise<ActionState> {
+  return editChecklist(stepId, projectId, (items) => items.filter((item) => item.id !== itemId));
 }
 
 /* ── key contacts ────────────────────────────────────────────────── */

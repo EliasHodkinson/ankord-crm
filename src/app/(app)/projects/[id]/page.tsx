@@ -24,6 +24,8 @@ import { RecordTasks } from "@/components/app/record-tasks";
 import { TrackVisit } from "@/components/app/track-visit";
 import { FilesPanel } from "@/components/app/files-panel";
 import { ConnectFolder } from "@/components/app/connect-folder";
+import { PlannerPanel } from "@/components/app/planner-panel";
+import { getPlannerLink } from "@/lib/data/planner";
 import { ProjectForm } from "../project-form";
 import { getProject, progressOf } from "@/lib/data/projects";
 import { listCommunications } from "@/lib/data/communications";
@@ -70,6 +72,7 @@ export default async function ProjectPage({
   ]);
 
   const progress = progressOf(project.steps);
+  const plannerLink = await getPlannerLink(id);
 
   return (
     <>
@@ -246,6 +249,13 @@ export default async function ProjectPage({
             <CardHeader title="Key contacts" meta="Who this depends on" />
             <CardBody>
               <KeyContacts projectId={project.id} contacts={project.keyContacts} />
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader title="Microsoft Planner" meta="Kept in step with a plan" />
+            <CardBody>
+              <PlannerPanel projectId={project.id} link={plannerLink} />
             </CardBody>
           </Card>
 

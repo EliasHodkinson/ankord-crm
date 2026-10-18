@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/form";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { RichText } from "./rich-text";
+import { StepChecklist } from "./step-checklist";
 import { addStep, setStepStatus, updateStepDetail } from "@/lib/actions/projects";
 import type { ProjectRecord, ProjectStepRecord } from "@/lib/data/projects";
 import type { TeamMember } from "@/lib/data/common";
@@ -199,6 +200,8 @@ function StepRow({
               ))}
             </ul>
           ) : null}
+
+          <StepChecklist stepId={step.id} projectId={projectId} items={step.checklist} />
 
           <ActionForm
             action={updateStepDetail.bind(null, step.id)}

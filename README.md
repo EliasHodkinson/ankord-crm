@@ -22,7 +22,8 @@ files and email all run through the Ankor'd Microsoft 365 tenant.
 | **Reports** | Pipeline by stage, won by month, conversation volume, delivery health, and who has gone quiet |
 | **Import** | CSV in, with automatic column matching and duplicate detection against what you already have |
 | **Bulk actions** | Select rows to reassign, re-stage or tag in one go |
-| **Runbook projects** | Numbered phases and steps with owners, warnings, key contacts and an account register |
+| **Runbook projects** | Numbered phases and steps with owners, warnings, checklists, key contacts and an account register |
+| **Microsoft Planner** | Each project can be kept in two-way sync with a Planner plan — create a plan from a project, a project from a plan, or link the two |
 
 ---
 
@@ -58,10 +59,18 @@ rotating.
 | `User.ReadBasic.All` | Showing colleagues in owner and assignee pickers |
 | `Mail.Read` | Reading the signed-in person's mailbox to link messages |
 | `Sites.ReadWrite.All` | Reading and writing the client files in SharePoint |
+| `Tasks.ReadWrite` | Mirroring follow-ups into Microsoft To Do, and reading and writing Planner plans, buckets and tasks |
+| `GroupMember.Read.All` | Naming the Microsoft 365 groups a person belongs to, so they can choose where a Planner plan lives |
 
 Everything is **delegated**, so the CRM only ever sees what the signed-in
 person can already see. There is no application permission and no service
 account. `Mail.Send` is deliberately not requested — the CRM never sends mail.
+
+> **Adding a permission to an existing deployment:** grant admin consent for it
+> *before* deploying the code that requests it. The CRM asks for every scope
+> each time it renews a session's token, so an unconsented scope makes that
+> renewal fail and signs everyone out until consent is granted. After consent,
+> people pick the new permission up the next time they sign in.
 
 > Want tighter file scoping? `Sites.Selected` restricts app access to named
 > sites, but it is application-only. Delegated `Sites.ReadWrite.All` keeps
@@ -156,7 +165,57 @@ database only stores the drive and item ids needed to find the folder again.
 
 ---
 
-## 6. Deploying to Vercel
+## 6. Microsoft Planner
+
+A project's runbook can be kept in step with a Planner plan, in both
+directions. An admin picks the Microsoft 365 group new plans go in, in
+**Settings → Microsoft Planner**; that page also lists every linked project
+and whether its last sync failed. From there, on any project page:
+
+- **Create a plan from this project** — a plan named after the project, in the
+  chosen group, with a bucket per phase and a task per step.
+- **Link an existing plan** — phases and buckets with the same name are paired,
+  as are steps and tasks with the same title; everything else is copied across
+  both ways. Where a pair differs, the plan's version is kept.
+- **New project → Or start from a Microsoft Planner plan** — the plan's buckets
+  become phases and its tasks become steps.
+
+| The Gangway | Planner | |
+|---|---|---|
+| Project name | Plan title | |
+| Phase (`01` + `Discovery`) | Bucket (`01 · Discovery`) | Bucket order is Planner's; phases follow it |
+| Step | Task | |
+| Step title | Task title | |
+| Phase the step is in | Task's bucket | Moving a task between buckets moves the step |
+| Assigned to | First assignee who also uses The Gangway | Other assignees are left alone in Planner |
+| Due | Due date | Read as the Australian date it falls on |
+| To do / In progress / Done | Not started / In progress / Completed | Blocked reads as in progress, N/A as completed; neither is overwritten while Planner agrees |
+| Description | Notes | |
+| Checklist | Checklist | Up to 20 items, Planner's limit; order is left to each side |
+| Links | Attachments → links | Each task also gets an "Open in The Gangway" link back to its step |
+
+Tags, owner labels, warnings, working notes and "waiting on" stay in The
+Gangway; Planner's priority, start date and labels stay in Planner.
+
+**How it syncs.** Planner offers no change notifications, and its delta query
+is beta-only, so the CRM polls: an open, linked project checks Planner when it
+opens and every minute while it is visible, and any edit to its runbook is
+pushed to Planner the moment it saves. Each sync compares both sides with the
+values they last agreed on (stored per bucket and task, with Planner's etags),
+so running it twice changes nothing the second time. A field changed on one
+side takes that side; a field changed on both sides between syncs keeps
+Planner's value. A deletion follows through to the other side unless the item
+was edited there in the meantime, in which case the edit wins and the item is
+recreated.
+
+Every sync runs with the signed-in person's own delegated token, so nobody can
+reach a plan through the CRM that Planner would not show them. A plan in a
+group someone is not in will fail for them, and the project page says so.
+Unlinking stops the sync and deletes nothing on either side.
+
+---
+
+## 7. Deploying to Vercel
 
 1. Import the repository into Vercel.
 2. Add all six environment variables to the project.
@@ -188,7 +247,8 @@ src/
   lib/
     auth/           Entra OIDC, sessions, token encryption
     db/             Drizzle schema and client
-    graph/          Microsoft Graph — mail and SharePoint
+    graph/          Microsoft Graph — mail, SharePoint, To Do and Planner
+    planner/        the Planner mapping and two-way sync
     actions/        server actions (writes)
     data/           server queries (reads)
     templates/      project runbook templates

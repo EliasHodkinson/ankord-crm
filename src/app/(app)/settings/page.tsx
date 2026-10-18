@@ -8,6 +8,8 @@ import { LibraryPicker } from "./library-picker";
 import { TeamTable } from "./team-table";
 import { XeroPanel } from "./xero-panel";
 import { TeamsPanel } from "./teams-panel";
+import { PlannerSettings } from "./planner-panel";
+import { listPlannerLinks } from "@/lib/data/planner";
 import { getDb } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { getSettings } from "@/lib/data/common";
@@ -68,6 +70,7 @@ export default async function SettingsPage({
 
   // Only an admin can see the picker, so only an admin pays for this call.
   const libraries = isAdmin ? await readLibraries(settings?.spSiteId ?? null) : [];
+  const plannerLinks = isAdmin ? await listPlannerLinks() : [];
 
   return (
     <>
@@ -163,6 +166,34 @@ export default async function SettingsPage({
                 ) : (
                   "An administrator needs to connect a SharePoint document library before files can be stored against customers and projects."
                 )}
+              </p>
+            )}
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHeader
+            title="Microsoft Planner"
+            meta={
+              settings?.plannerGroupName
+                ? `New plans are created in ${settings.plannerGroupName}`
+                : "Projects can be kept in step with Planner plans"
+            }
+          />
+          <CardBody>
+            {isAdmin ? (
+              <PlannerSettings
+                current={{
+                  id: settings?.plannerGroupId ?? null,
+                  name: settings?.plannerGroupName ?? null,
+                }}
+                links={plannerLinks}
+              />
+            ) : (
+              <p className="text-[13px] text-[var(--text-muted)]">
+                {settings?.plannerGroupName
+                  ? `New plans are created in the ${settings.plannerGroupName} group. An admin can change this.`
+                  : "No default group yet — you choose one when creating a plan. An admin can set a default."}
               </p>
             )}
           </CardBody>
