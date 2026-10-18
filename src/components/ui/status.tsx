@@ -129,6 +129,151 @@ export const FILE_ACCESS: Record<string, Entry> = {
   read: { label: "Can view files", tone: "neutral" },
 };
 
+/* ── sales and purchasing documents (spec §4.6) ─────────────────── */
+
+/** Status wording differs by document type; tones do not. */
+export const DOCUMENT_STATUS: Record<string, Record<string, Entry>> = {
+  quote: {
+    draft: { label: "Draft", tone: "neutral" },
+    open: { label: "Sent", tone: "info" },
+    closed: { label: "Accepted", tone: "ok" },
+    cancelled: { label: "Deleted", tone: "muted" },
+  },
+  sales_order: {
+    draft: { label: "Draft", tone: "neutral" },
+    open: { label: "Confirmed", tone: "info" },
+    closed: { label: "Complete", tone: "ok" },
+    cancelled: { label: "Cancelled", tone: "muted" },
+  },
+  invoice: {
+    draft: { label: "Draft", tone: "neutral" },
+    open: { label: "Awaiting payment", tone: "info" },
+    closed: { label: "Paid", tone: "ok" },
+    cancelled: { label: "Voided", tone: "muted" },
+  },
+  delivery: {
+    open: { label: "Delivered", tone: "ok" },
+    cancelled: { label: "Cancelled", tone: "muted" },
+  },
+  purchase_order: {
+    draft: { label: "Draft", tone: "neutral" },
+    open: { label: "Ordered", tone: "info" },
+    closed: { label: "Complete", tone: "ok" },
+    cancelled: { label: "Deleted", tone: "muted" },
+  },
+  goods_receipt: {
+    open: { label: "Received", tone: "ok" },
+    cancelled: { label: "Cancelled", tone: "muted" },
+  },
+  bill: {
+    draft: { label: "Draft", tone: "neutral" },
+    open: { label: "Awaiting payment", tone: "info" },
+    closed: { label: "Paid", tone: "ok" },
+    cancelled: { label: "Voided", tone: "muted" },
+  },
+};
+
+/** States derived at display time rather than stored. */
+export const DOCUMENT_STATE_EXTRA = {
+  quoteAccepted: { label: "Accepted", tone: "ok" },
+  quoteDeclined: { label: "Declined", tone: "muted" },
+  quoteExpired: { label: "Expired", tone: "warn" },
+  closedByHand: { label: "Closed", tone: "neutral" },
+  overdue: { label: "Overdue", tone: "warn" },
+  partPaid: { label: "Part paid", tone: "info" },
+} as const satisfies Record<string, Entry>;
+
+/**
+ * The one badge for a document's state, folding in what is derived: a quote's
+ * outcome or expiry, an invoice that is overdue or part paid, an order closed
+ * by hand rather than completed.
+ */
+export function documentStatus(doc: {
+  type: string;
+  status: string;
+  quoteOutcome?: string | null;
+  closedBy?: string | null;
+  dueDate?: string | null;
+  amountPaid?: string | null;
+  amountDue?: string | null;
+  /** ISO date for "today", passed in so rendering stays pure. */
+  today: string;
+}): Entry {
+  const base = DOCUMENT_STATUS[doc.type]?.[doc.status] ?? { label: doc.status, tone: "neutral" as Tone };
+  if (doc.type === "quote" && doc.status !== "cancelled") {
+    if (doc.quoteOutcome === "declined") return DOCUMENT_STATE_EXTRA.quoteDeclined;
+    if (doc.quoteOutcome === "expired") return DOCUMENT_STATE_EXTRA.quoteExpired;
+    if (doc.quoteOutcome === "accepted") return DOCUMENT_STATE_EXTRA.quoteAccepted;
+    if (doc.status === "open" && doc.dueDate && doc.dueDate < doc.today) {
+      return DOCUMENT_STATE_EXTRA.quoteExpired;
+    }
+  }
+  if (doc.status === "closed" && doc.closedBy === "person" && doc.type !== "quote") {
+    return DOCUMENT_STATE_EXTRA.closedByHand;
+  }
+  if ((doc.type === "invoice" || doc.type === "bill") && doc.status === "open") {
+    if (Number(doc.amountDue ?? 0) > 0 && doc.dueDate && doc.dueDate < doc.today) {
+      return DOCUMENT_STATE_EXTRA.overdue;
+    }
+    if (Number(doc.amountPaid ?? 0) > 0) return DOCUMENT_STATE_EXTRA.partPaid;
+  }
+  return base;
+}
+
+/** Document-level fulfilment, as stored in documents.fulfilment. */
+export const FULFILMENT: Record<string, Entry> = {
+  to_order: { label: "To order", tone: "warn" },
+  on_order: { label: "On order", tone: "info" },
+  ready: { label: "Ready", tone: "ok" },
+  part_invoiced: { label: "Part invoiced", tone: "info" },
+  invoiced: { label: "Invoiced, to deliver", tone: "info" },
+  to_deliver: { label: "To deliver", tone: "warn" },
+  delivered: { label: "Delivered", tone: "ok" },
+  to_receive: { label: "To receive", tone: "info" },
+  part_received: { label: "Part received", tone: "info" },
+  received: { label: "Received", tone: "ok" },
+};
+
+/** Per sales-order line (lib/sales/fulfilment.ts#lineState). */
+export const LINE_STATE: Record<string, Entry> = {
+  to_order: { label: "To order", tone: "warn" },
+  on_order: { label: "On order", tone: "info" },
+  ready: { label: "Ready", tone: "ok" },
+  to_invoice: { label: "To invoice", tone: "neutral" },
+  invoiced: { label: "Invoiced, to deliver", tone: "info" },
+  done: { label: "Done", tone: "ok" },
+};
+
+export const QUOTE_OUTCOME: Record<string, Entry> = {
+  accepted: { label: "Accepted", tone: "ok" },
+  declined: { label: "Declined", tone: "muted" },
+  expired: { label: "Expired", tone: "warn" },
+};
+
+/** Where a document stands with Xero. */
+export const XERO_SYNC: Record<string, Entry> = {
+  local_only: { label: "Gangway only", tone: "muted" },
+  pending: { label: "Not in Xero yet", tone: "neutral" },
+  pushing: { label: "Sending to Xero", tone: "info" },
+  synced: { label: "In Xero", tone: "ok" },
+  stale: { label: "Updating Xero", tone: "info" },
+  failed: { label: "Xero problem", tone: "danger" },
+  blocked: { label: "Needs attention", tone: "warn" },
+};
+
+export const ROW_TYPE: Record<string, { label: string; hint: string }> = {
+  item: { label: "Item", hint: "A priced line" },
+  alternative: { label: "Alternative", hint: "An optional extra, shown on the quote but not counted" },
+  text: { label: "Text", hint: "A heading or note between lines" },
+  subtotal: { label: "Subtotal", hint: "Adds up the lines above it" },
+};
+
+export const AMOUNTS_ARE: Record<string, { label: string }> = {
+  exclusive: { label: "Tax exclusive" },
+  inclusive: { label: "Tax inclusive" },
+  no_tax: { label: "No tax" },
+};
+
 export function StatusBadge({
   map,
   value,

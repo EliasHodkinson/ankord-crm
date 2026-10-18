@@ -2,14 +2,15 @@ import { NextResponse, type NextRequest } from "next/server";
 import { and, ilike, or, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
-import { contacts, customers, leads, projects } from "@/lib/db/schema";
+import { contacts, customers, documents, leads, projects } from "@/lib/db/schema";
+import { docHref, documentTitle, typeLabel } from "@/lib/sales/doc-types";
 import { customerScope, getAccess } from "@/lib/access";
 
 export const dynamic = "force-dynamic";
 
 export type SearchHit = {
   id: string;
-  kind: "customer" | "contact" | "lead" | "project";
+  kind: "customer" | "contact" | "lead" | "project" | "document";
   title: string;
   subtitle: string | null;
   href: string;
@@ -29,7 +30,7 @@ export async function GET(request: NextRequest) {
   // partners and what hangs off them, and never a lead.
   const access = await getAccess();
 
-  const [customerHits, contactHits, leadHits, projectHits] = await Promise.all([
+  const [customerHits, contactHits, leadHits, projectHits, documentHits] = await Promise.all([
     db
       .select({ id: customers.id, name: customers.name, suburb: customers.suburb })
       .from(customers)
@@ -80,6 +81,23 @@ export async function GET(request: NextRequest) {
         ),
       )
       .limit(5),
+    // Sales documents by number (QU-, SO-, INV-…) or the customer's reference.
+    db
+      .select({
+        id: documents.id,
+        type: documents.type,
+        number: documents.number,
+        isReserve: documents.isReserve,
+        partnerName: documents.partnerName,
+      })
+      .from(documents)
+      .where(
+        and(
+          or(ilike(documents.number, like), ilike(documents.reference, like)),
+          customerScope(access, documents.partnerId),
+        ),
+      )
+      .limit(6),
   ]);
 
   const hits: SearchHit[] = [
@@ -110,6 +128,13 @@ export async function GET(request: NextRequest) {
       title: p.name,
       subtitle: p.company,
       href: `/projects/${p.id}`,
+    })),
+    ...documentHits.map((d) => ({
+      id: d.id,
+      kind: "document" as const,
+      title: documentTitle(d),
+      subtitle: `${typeLabel(d.type, d.isReserve)} · ${d.partnerName}`,
+      href: docHref(d),
     })),
   ];
 

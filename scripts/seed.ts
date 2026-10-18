@@ -23,7 +23,11 @@ const {
   contactFacts,
   contacts,
   customers,
+  documentLines,
+  documents,
+  items,
   leads,
+  numberSeries,
   projectAccounts,
   projectContacts,
   projectPhases,
@@ -53,6 +57,7 @@ async function main() {
     console.log("Clearing demo content…");
     await db.execute(sql`
       truncate table
+        ${documentLines}, ${documents}, ${items},
         ${activity}, ${communications}, ${tasks}, ${contactFacts},
         ${projectAccounts}, ${projectContacts}, ${projectSteps},
         ${projectPhases}, ${projects}, ${contacts}, ${customers}, ${leads},
@@ -698,6 +703,124 @@ async function main() {
       },
     ]);
 
+    console.log("Adding items and sales documents…");
+
+    // Xero-type documents are seeded `pending` with no number: Xero numbers
+    // them on the first push, once a (demo) Xero organisation is connected.
+    const [cards, banner, design, setup] = await db
+      .insert(items)
+      .values([
+        {
+          code: "BC-500",
+          name: "Business cards (500)",
+          description: "500 business cards, 350gsm, double sided",
+          tracksStock: true,
+          unit: "box of 500",
+          isSold: true,
+          isPurchased: true,
+          salePrice: "150",
+          purchasePrice: "62.5",
+          salesTaxType: "OUTPUT",
+          purchaseTaxType: "INPUT",
+          createdById: owner,
+        },
+        {
+          code: "BAN-PULL",
+          name: "Pull-up banner",
+          description: "850 × 2000mm pull-up banner with stand",
+          tracksStock: true,
+          unit: "ea",
+          isSold: true,
+          isPurchased: true,
+          salePrice: "295",
+          salesTaxType: "OUTPUT",
+          purchaseTaxType: "INPUT",
+          createdById: owner,
+        },
+        {
+          code: "DES-HR",
+          name: "Design time",
+          description: "Graphic design",
+          tracksStock: false,
+          unit: "hr",
+          isSold: true,
+          salePrice: "120",
+          salesTaxType: "OUTPUT",
+          createdById: owner,
+        },
+        {
+          code: "SETUP",
+          name: "Setup fee",
+          description: "Artwork setup and proofing",
+          tracksStock: false,
+          isSold: true,
+          salePrice: "45",
+          salesTaxType: "OUTPUT",
+          createdById: owner,
+        },
+      ])
+      .returning();
+
+    const today = iso(new Date());
+    const [quote] = await db
+      .insert(documents)
+      .values({
+        type: "quote",
+        status: "draft",
+        partnerId: qak.id,
+        partnerName: "Maple Street Kitchens",
+        reference: "Showroom reopening",
+        docDate: today,
+        dueDate: iso(daysAhead(30)),
+        ownerId: owner,
+        title: "Showroom reopening print",
+        subtotal: "1035.00",
+        taxTotal: "103.50",
+        total: "1138.50",
+        xeroSyncState: "pending",
+        createdById: owner,
+      })
+      .returning({ id: documents.id });
+    await db.insert(documentLines).values([
+      { documentId: quote.id, position: 0, rowType: "text", description: "Printing" },
+      { documentId: quote.id, position: 1, itemId: cards.id, itemCode: cards.code, unit: cards.unit, tracksStock: true, description: cards.description!, quantity: "4", unitPrice: "150", taxType: "OUTPUT", taxRate: "10", lineAmount: "600.00", taxAmount: "60.00" },
+      { documentId: quote.id, position: 2, itemId: banner.id, itemCode: banner.code, unit: banner.unit, tracksStock: true, description: banner.description!, quantity: "1", unitPrice: "295", taxType: "OUTPUT", taxRate: "10", lineAmount: "295.00", taxAmount: "29.50" },
+      { documentId: quote.id, position: 3, itemId: setup.id, itemCode: setup.code, description: setup.description!, quantity: "1", unitPrice: "140", taxType: "OUTPUT", taxRate: "10", lineAmount: "140.00", taxAmount: "14.00" },
+      { documentId: quote.id, position: 4, rowType: "alternative", itemId: design.id, itemCode: design.code, unit: design.unit, description: "Refresh the menu design", quantity: "3", unitPrice: "120", taxType: "OUTPUT", taxRate: "10", lineAmount: "360.00", taxAmount: "36.00" },
+    ]);
+
+    // A standalone order, so the fulfilment column has something to show.
+    const [series] = await db
+      .update(numberSeries)
+      .set({ nextValue: sql`${numberSeries.nextValue} + 1` })
+      .where(eq(numberSeries.key, "sales_order"))
+      .returning({ prefix: numberSeries.prefix, value: sql<number>`${numberSeries.nextValue} - 1`, padTo: numberSeries.padTo });
+    const [order] = await db
+      .insert(documents)
+      .values({
+        type: "sales_order",
+        number: series ? `${series.prefix}${String(series.value).padStart(series.padTo, "0")}` : null,
+        status: "open",
+        partnerId: border.id,
+        partnerName: "Parkside Physio",
+        reference: "PP-2291",
+        docDate: today,
+        dueDate: iso(daysAhead(10)),
+        ownerId: second,
+        subtotal: "1015.00",
+        taxTotal: "101.50",
+        total: "1116.50",
+        fulfilment: "to_order",
+        issuedAt: new Date(),
+        xeroSyncState: "local_only",
+        createdById: owner,
+      })
+      .returning({ id: documents.id });
+    await db.insert(documentLines).values([
+      { documentId: order.id, position: 0, itemId: banner.id, itemCode: banner.code, unit: banner.unit, tracksStock: true, description: banner.description!, quantity: "3", unitPrice: "295", taxType: "OUTPUT", taxRate: "10", lineAmount: "885.00", taxAmount: "88.50" },
+      { documentId: order.id, position: 1, itemId: design.id, itemCode: design.code, unit: design.unit, description: "Banner artwork", quantity: "1", unitPrice: "130", taxType: "OUTPUT", taxRate: "10", lineAmount: "130.00", taxAmount: "13.00" },
+    ]);
+
     // A couple of saved views so the feature is discoverable rather than empty.
     await db.insert(savedViews).values([
       {
@@ -716,6 +839,14 @@ async function main() {
         isShared: true,
         createdById: owner,
         position: 1,
+      },
+      {
+        entity: "sales_orders",
+        name: "Needs ordering",
+        query: "fulfilment=to_order",
+        isShared: true,
+        createdById: owner,
+        position: 0,
       },
       {
         entity: "customers",

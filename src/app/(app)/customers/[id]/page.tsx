@@ -28,6 +28,9 @@ import { CopilotBrief } from "@/components/app/copilot-brief";
 import { RecordNav } from "@/components/app/record-nav";
 import { AccountRegister } from "@/components/app/account-register";
 import { CustomerForm } from "../customer-form";
+import { DocumentSummary } from "@/components/app/documents/document-summary";
+import { documentsForPartner } from "@/lib/data/documents";
+import { canWriteSales } from "@/lib/auth/session";
 import { getCustomer } from "@/lib/data/customers";
 import { listCommunications } from "@/lib/data/communications";
 import { getSettings, listTeam } from "@/lib/data/common";
@@ -67,13 +70,14 @@ export default async function CustomerPage({
   // grant shares, and the link picker searches every Xero contact.
   const { restricted } = await getAccess();
 
-  const [entries, team, settings, folder, xero, xeroConn] = await Promise.all([
+  const [entries, team, settings, folder, xero, xeroConn, salesDocs] = await Promise.all([
     listCommunications({ customerId: id }),
     listTeam(),
     getSettings(),
     readFolder(customer.spDriveId, customer.spItemId),
     restricted ? readXeroSnapshot(null) : readXeroSnapshot(customer.xeroContactId),
     restricted ? null : readXeroConnection().catch(() => null),
+    documentsForPartner(id),
   ]);
   const xeroLive = Boolean(xeroConn);
 
@@ -158,6 +162,9 @@ export default async function CustomerPage({
           className="col-span-full xl:col-span-1"
           sections={[
             { id: "projects", label: "Projects", count: customer.projects.length },
+            ...(customer.isCustomer || salesDocs.length
+              ? [{ id: "sales", label: "Sales", count: salesDocs.length }]
+              : []),
             { id: "people", label: "People", count: customer.contacts.length },
             { id: "history", label: "History", count: entries.length },
             { id: "accounts", label: "Accounts", count: customer.accounts.length },
@@ -239,6 +246,17 @@ export default async function CustomerPage({
               </ul>
             )}
           </Card>
+
+          {customer.isCustomer || salesDocs.length ? (
+            <DocumentSummary
+              id="sales"
+              title="Sales"
+              documents={salesDocs}
+              newHref={`partner=${customer.id}`}
+              canWrite={canWriteSales(user.role) && customer.isCustomer}
+              emptyText="Quotes, sales orders and invoices for this business partner appear here. Quotes and invoices are numbered and sent by Xero."
+            />
+          ) : null}
 
           <Card id="people" className="scroll-mt-20">
             <CardHeader

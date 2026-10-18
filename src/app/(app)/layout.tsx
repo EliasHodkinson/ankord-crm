@@ -9,6 +9,7 @@ import { CommandPalette } from "@/components/app/command-palette";
 import { KeyboardShortcuts } from "@/components/app/keyboard-shortcuts";
 import { getSession } from "@/lib/auth/session";
 import { dueCount } from "@/lib/data/tasks";
+import { salesCounts } from "@/lib/data/documents";
 import { isAuthConfigured, isDatabaseConfigured } from "@/lib/env";
 import { labelFor, USER_ROLE } from "@/components/ui/status";
 
@@ -21,7 +22,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const restricted = user.role === "restricted";
 
   // A number on the rail is the cheapest reminder there is.
-  const due = await dueCount(user.id).catch(() => 0);
+  const [due, sales] = await Promise.all([
+    dueCount(user.id).catch(() => 0),
+    salesCounts().catch(() => ({ toOrder: 0, overdue: 0 })),
+  ]);
+  const counts = { due, ...sales };
 
   return (
     <div className="flex min-h-dvh">
@@ -36,13 +41,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             CRM
           </span>
         </Link>
-        <Nav counts={{ due }} restricted={restricted} />
+        <Nav counts={counts} restricted={restricted} />
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Wraps to two rows on small screens so the search field stays usable */}
         <header className="sticky top-0 z-40 flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-[var(--border)] bg-[var(--surface)]/85 px-4 py-2.5 backdrop-blur-md md:h-14 md:flex-nowrap md:py-0">
-          <MobileNav counts={{ due }} restricted={restricted} />
+          <MobileNav counts={counts} restricted={restricted} />
           <Link href="/" className="lg:hidden">
             <AnkordLogo className="h-4 w-auto text-[var(--color-coastal-800)] dark:text-white" />
           </Link>

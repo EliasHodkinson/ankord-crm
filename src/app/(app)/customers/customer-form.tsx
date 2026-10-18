@@ -111,6 +111,26 @@ export function CustomerForm({
             hint="However Ankor'd groups clients — retainer, project, referral partner."
           />
         </FormRow>
+        <FormRow>
+          <TextField
+            name="termsDays"
+            label="Payment terms (days)"
+            id={f("termsDays")}
+            type="number"
+            min={0}
+            defaultValue={customer?.termsDays?.toString() ?? ""}
+            hint="For invoices to them. Blank uses the default."
+          />
+          <TextField
+            name="supplierTermsDays"
+            label="Their terms to us (days)"
+            id={f("supplierTermsDays")}
+            type="number"
+            min={0}
+            defaultValue={customer?.supplierTermsDays?.toString() ?? ""}
+            hint="For bills from them, if they supply us."
+          />
+        </FormRow>
       </FormSection>
 
       <FormSection title="How to reach them">

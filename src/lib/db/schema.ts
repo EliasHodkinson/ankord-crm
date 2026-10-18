@@ -11,6 +11,7 @@ import {
   numeric,
   index,
   uniqueIndex,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { DEFAULT_CLIENT_FOLDER_TEXT } from "../folder-template";
@@ -204,6 +205,13 @@ export const customers = pgTable(
      * record so a stale brief is visible rather than quietly wrong.
      */
     briefWrittenAt: timestamp("brief_written_at", { withTimezone: true }),
+
+    /**
+     * Payment terms in days, for invoices to them and bills from them. Null
+     * falls back to the defaults in settings. 0 is legal: due on the day.
+     */
+    termsDays: integer("terms_days"),
+    supplierTermsDays: integer("supplier_terms_days"),
 
     tags: text("tags").array().notNull().default(sql`ARRAY[]::text[]`),
     notes: text("notes"),
@@ -806,6 +814,29 @@ export const settings = pgTable("settings", {
   staleLeadDays: integer("stale_lead_days").notNull().default(7),
   staleCustomerDays: integer("stale_customer_days").notNull().default(90),
   staleProjectDays: integer("stale_project_days").notNull().default(14),
+
+  /*
+   * Sales & Xero. Account codes and tax types are Xero's own identifiers,
+   * picked from the cached /Accounts and /TaxRates. An item's own choice wins;
+   * these are what a line falls back to.
+   */
+  defaultSalesAccount: text("default_sales_account"),
+  defaultPurchaseAccount: text("default_purchase_account"),
+  defaultSalesTaxType: text("default_sales_tax_type"),
+  defaultPurchaseTaxType: text("default_purchase_tax_type"),
+  quoteBrandingThemeId: text("quote_branding_theme_id"),
+  invoiceBrandingThemeId: text("invoice_branding_theme_id"),
+  poBrandingThemeId: text("po_branding_theme_id"),
+  /** Where suppliers deliver to by default — the deliver-to on a PO. */
+  deliveryAddress: text("delivery_address"),
+  customerTermsDays: integer("customer_terms_days").notNull().default(14),
+  supplierTermsDays: integer("supplier_terms_days").notNull().default(30),
+  quoteValidityDays: integer("quote_validity_days").notNull().default(30),
+  /** Whether The Gangway may approve supplier bills, or leaves that to Xero (Q6). */
+  allowBillApproval: boolean("allow_bill_approval").notNull().default(true),
+  /** When the Xero pull last completed — the If-Modified-Since for the next. */
+  xeroLastPullAt: timestamp("xero_last_pull_at", { withTimezone: true }),
+
   updatedById: uuid("updated_by_id").references(() => users.id, { onDelete: "set null" }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -898,10 +929,363 @@ export const xeroConnection = pgTable("xero_connection", {
   refreshTokenEnc: text("refresh_token_enc"),
   /** When the pair was last rotated — the 60-day clock runs from here. */
   refreshedAt: timestamp("refreshed_at", { withTimezone: true }),
+  /**
+   * The scopes Xero granted, space-separated, read from the access token. Null
+   * on a connection made before this was recorded, which is treated as "has
+   * none of the write scopes" so the settings page asks for a reconnect.
+   */
+  scope: text("scope"),
 
   connectedById: uuid("connected_by_id").references(() => users.id, { onDelete: "set null" }),
   connectedAt: timestamp("connected_at", { withTimezone: true }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/* ───────────────────────── sales & purchasing ───────────────────────── */
+
+/*
+ * The design is docs/sales-erp-spec.md. In short: The Gangway runs the
+ * workflow and Xero holds the money, the numbers and the outbound documents.
+ * Quotes, invoices, purchase orders and bills are created in Xero as drafts on
+ * first save and take Xero's number; sales orders, goods receipts and
+ * deliveries are Gangway's own and are numbered here.
+ */
+
+export const documentTypeEnum = pgEnum("document_type", [
+  "quote", // Xero Quote
+  "sales_order", // local
+  "invoice", // Xero ACCREC; isReserve marks a reserve invoice
+  "delivery", // local; only against a reserve invoice
+  "purchase_order", // Xero PurchaseOrder
+  "goods_receipt", // local
+  "bill", // Xero ACCPAY
+]);
+
+export const documentStatusEnum = pgEnum("document_status", [
+  /** Editable. Xero types exist in Xero as DRAFT already. */
+  "draft",
+  /** Live: quote sent, order confirmed, invoice/PO/bill approved, receipt or delivery recorded. */
+  "open",
+  /** Finished — automatically once fully converted, or by hand. */
+  "closed",
+  /** Voided or deleted. Keeps its number. */
+  "cancelled",
+]);
+
+export const quoteOutcomeEnum = pgEnum("quote_outcome", ["accepted", "declined", "expired"]);
+export const rowTypeEnum = pgEnum("row_type", ["item", "alternative", "text", "subtotal"]);
+export const amountsAreEnum = pgEnum("amounts_are", ["exclusive", "inclusive", "no_tax"]);
+
+export const xeroSyncStateEnum = pgEnum("xero_sync_state", [
+  "local_only", // sales_order, goods_receipt, delivery
+  "pending", // queued
+  "pushing", // claimed by a push
+  "synced", // Xero matches xeroPushedVersion == version
+  "stale", // edited since the last push
+  "failed", // last attempt failed (xeroError); retry allowed
+  "blocked", // needs a person: contact not linked, account not mapped, Xero not connected
+]);
+
+/** Quantities and unit prices carry four places; money carries two. */
+const qty = (name: string) => numeric(name, { precision: 14, scale: 4 });
+const cash = (name: string) => numeric(name, { precision: 14, scale: 2 });
+
+/**
+ * What Ankor'd sells and buys. Synced to Xero as an untracked Item: stock
+ * quantities are counted here, never valued in Xero (D4).
+ */
+export const items = pgTable(
+  "items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Xero Item.Code — 30 characters at most. */
+    code: text("code").notNull(),
+    /** Xero Item.Name — 50 characters at most. */
+    name: text("name").notNull(),
+    /** Default sales line text. */
+    description: text("description"),
+    /** Default purchase-order line text. */
+    purchaseDescription: text("purchase_description"),
+    /** Physical goods. Drives ordering, receiving, allocation and delivery. */
+    tracksStock: boolean("tracks_stock").notNull().default(false),
+    unit: text("unit"),
+    isSold: boolean("is_sold").notNull().default(true),
+    isPurchased: boolean("is_purchased").notNull().default(false),
+    /** Ex GST. A missing buy price is shown as missing, never guessed. */
+    salePrice: qty("sale_price"),
+    purchasePrice: qty("purchase_price"),
+    salesAccountCode: text("sales_account_code"),
+    purchaseAccountCode: text("purchase_account_code"),
+    salesTaxType: text("sales_tax_type"),
+    purchaseTaxType: text("purchase_tax_type"),
+    preferredSupplierId: uuid("preferred_supplier_id").references(() => customers.id, {
+      onDelete: "set null",
+    }),
+    xeroItemId: text("xero_item_id"),
+    xeroSyncState: xeroSyncStateEnum("xero_sync_state").notNull().default("pending"),
+    xeroError: text("xero_error"),
+    xeroSyncedAt: timestamp("xero_synced_at", { withTimezone: true }),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdById: uuid("created_by_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("items_code_idx").on(t.code),
+    index("items_name_idx").on(t.name),
+    index("items_sync_idx").on(t.xeroSyncState),
+  ],
+);
+
+/**
+ * Every sales and purchasing document, of every type. One table so copy-to,
+ * related documents and the Xero push are written once.
+ */
+export const documents = pgTable(
+  "documents",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    type: documentTypeEnum("type").notNull(),
+    /**
+     * Xero types: Xero's number, written back after the first push (null until
+     * then). Bills: the supplier's invoice number. Local types: from
+     * number_series on create.
+     */
+    number: text("number"),
+    status: documentStatusEnum("status").notNull().default("draft"),
+    isReserve: boolean("is_reserve").notNull().default(false),
+    quoteOutcome: quoteOutcomeEnum("quote_outcome"),
+
+    partnerId: uuid("partner_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "restrict" }),
+    partnerName: text("partner_name").notNull(),
+    contactId: uuid("contact_id").references(() => contacts.id, { onDelete: "set null" }),
+    contactName: text("contact_name"),
+    contactEmail: text("contact_email"),
+
+    reference: text("reference"),
+    supplierInvoiceNumber: text("supplier_invoice_number"),
+    docDate: date("doc_date").notNull(),
+    /** Quote: valid until. SO and PO: delivery date. Invoice and bill: due date. */
+    dueDate: date("due_date"),
+    termsDays: integer("terms_days"),
+    shipToText: text("ship_to_text"),
+    ownerId: uuid("owner_id").references(() => users.id, { onDelete: "set null" }),
+    projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
+    /** The job this traces to — set on POs, receipts, invoices and deliveries. */
+    salesOrderId: uuid("sales_order_id").references((): AnyPgColumn => documents.id, {
+      onDelete: "set null",
+    }),
+    amountsAre: amountsAreEnum("amounts_are").notNull().default("exclusive"),
+
+    title: text("title"),
+    summary: text("summary"),
+    terms: text("terms"),
+    remarks: text("remarks"),
+    /** Never leaves The Gangway. */
+    internalNotes: text("internal_notes"),
+
+    subtotal: cash("subtotal").notNull().default("0"),
+    taxTotal: cash("tax_total").notNull().default("0"),
+    total: cash("total").notNull().default("0"),
+    amountPaid: cash("amount_paid").notNull().default("0"),
+    amountDue: cash("amount_due").notNull().default("0"),
+    /** Derived summary for lists — see lib/sales/fulfilment.ts. */
+    fulfilment: text("fulfilment"),
+
+    /** Optimistic lock. A save carries the version it was opened at. */
+    version: integer("version").notNull().default(1),
+    issuedAt: timestamp("issued_at", { withTimezone: true }),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    closedBy: text("closed_by").$type<"auto" | "person">(),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    cancelledById: uuid("cancelled_by_id").references(() => users.id, { onDelete: "set null" }),
+    cancelReason: text("cancel_reason"),
+
+    /* Xero — see lib/xero/push.ts */
+    xeroId: text("xero_id"),
+    xeroStatus: text("xero_status"),
+    xeroSyncState: xeroSyncStateEnum("xero_sync_state").notNull(),
+    xeroPushedVersion: integer("xero_pushed_version"),
+    xeroError: text("xero_error"),
+    xeroAttempts: integer("xero_attempts").notNull().default(0),
+    xeroLastAttemptAt: timestamp("xero_last_attempt_at", { withTimezone: true }),
+    xeroSyncedAt: timestamp("xero_synced_at", { withTimezone: true }),
+    /** Xero's UpdatedDateUTC, for change detection on the pull. */
+    xeroUpdatedAt: timestamp("xero_updated_at", { withTimezone: true }),
+    /** Xero's own Total as last seen, so an edit made in Xero shows up here. */
+    xeroTotal: cash("xero_total"),
+
+    createdById: uuid("created_by_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("documents_type_status_idx").on(t.type, t.status, t.docDate),
+    index("documents_partner_idx").on(t.partnerId, t.type),
+    index("documents_sales_order_idx").on(t.salesOrderId),
+    index("documents_project_idx").on(t.projectId),
+    index("documents_sync_idx").on(t.type, t.xeroSyncState),
+    uniqueIndex("documents_number_idx")
+      .on(t.type, t.number)
+      .where(sql`${t.number} is not null and ${t.type} <> 'bill'`),
+    uniqueIndex("documents_xero_idx").on(t.xeroId).where(sql`${t.xeroId} is not null`),
+    /* A supplier's invoice number is theirs, so it is unique per supplier. */
+    uniqueIndex("documents_bill_number_idx")
+      .on(t.partnerId, t.supplierInvoiceNumber)
+      .where(sql`${t.type} = 'bill' and ${t.status} <> 'cancelled'`),
+  ],
+);
+
+export const documentLines = pgTable(
+  "document_lines",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    position: integer("position").notNull(),
+    rowType: rowTypeEnum("row_type").notNull().default("item"),
+    itemId: uuid("item_id").references(() => items.id, { onDelete: "set null" }),
+    itemCode: text("item_code"),
+    unit: text("unit"),
+    tracksStock: boolean("tracks_stock").notNull().default(false),
+    description: text("description").notNull().default(""),
+    note: text("note"),
+    quantity: qty("quantity").notNull().default("0"),
+    unitPrice: qty("unit_price").notNull().default("0"),
+    discountPercent: numeric("discount_percent", { precision: 7, scale: 4 })
+      .notNull()
+      .default("0"),
+    accountCode: text("account_code"),
+    taxType: text("tax_type"),
+    taxRate: numeric("tax_rate", { precision: 7, scale: 4 }).notNull().default("0"),
+    lineAmount: cash("line_amount").notNull().default("0"),
+    taxAmount: cash("tax_amount").notNull().default("0"),
+    /** The line this was copied from (quote → order → invoice). */
+    baseLineId: uuid("base_line_id").references((): AnyPgColumn => documentLines.id, {
+      onDelete: "restrict",
+    }),
+    /** On a PO line: the sales-order line it was raised for. */
+    sourceLineId: uuid("source_line_id").references((): AnyPgColumn => documentLines.id, {
+      onDelete: "set null",
+    }),
+
+    /* Derived counters — recomputed from the links, never typed. */
+    qtyConverted: qty("qty_converted").notNull().default("0"),
+    qtyOrdered: qty("qty_ordered").notNull().default("0"),
+    qtyAllocated: qty("qty_allocated").notNull().default("0"),
+    qtyInvoiced: qty("qty_invoiced").notNull().default("0"),
+    qtyDelivered: qty("qty_delivered").notNull().default("0"),
+    qtyReceived: qty("qty_received").notNull().default("0"),
+    qtyBilled: qty("qty_billed").notNull().default("0"),
+  },
+  (t) => [
+    index("document_lines_document_idx").on(t.documentId, t.position),
+    index("document_lines_base_idx").on(t.baseLineId),
+    index("document_lines_source_idx").on(t.sourceLineId),
+    index("document_lines_item_idx").on(t.itemId),
+  ],
+);
+
+/** Stock set aside for a sales-order line. Used from phase B. */
+export const stockAllocations = pgTable(
+  "stock_allocations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    salesOrderLineId: uuid("sales_order_line_id")
+      .notNull()
+      .references(() => documentLines.id, { onDelete: "cascade" }),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => items.id, { onDelete: "restrict" }),
+    quantity: qty("quantity").notNull(),
+    receiptLineId: uuid("receipt_line_id").references(() => documentLines.id, {
+      onDelete: "set null",
+    }),
+    releasedAt: timestamp("released_at", { withTimezone: true }),
+    releasedById: uuid("released_by_id").references(() => users.id, { onDelete: "set null" }),
+    consumed: qty("consumed").notNull().default("0"),
+    createdById: uuid("created_by_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("stock_allocations_line_idx").on(t.salesOrderLineId),
+    index("stock_allocations_item_idx").on(t.itemId),
+  ],
+);
+
+/** Stocktake and breakage corrections. Admin only. Used from phase B. */
+export const stockAdjustments = pgTable(
+  "stock_adjustments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => items.id, { onDelete: "restrict" }),
+    quantity: qty("quantity").notNull(),
+    reason: text("reason").notNull(),
+    createdById: uuid("created_by_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("stock_adjustments_item_idx").on(t.itemId)],
+);
+
+/** Numbering for the documents Xero never sees: SO-, GR-, DN-. */
+export const numberSeries = pgTable("number_series", {
+  key: text("key").primaryKey(),
+  prefix: text("prefix").notNull(),
+  nextValue: integer("next_value").notNull().default(1),
+  padTo: integer("pad_to").notNull().default(5),
+});
+
+/**
+ * Notes written onto a Xero document's history, so someone in Xero can follow
+ * what happened in The Gangway. Best effort: queued here, written after the
+ * document exists in Xero, retried by the cron, never blocking anything.
+ */
+export const xeroHistoryNotes = pgTable(
+  "xero_history_notes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    details: text("details").notNull(),
+    writtenAt: timestamp("written_at", { withTimezone: true }),
+    attempts: integer("attempts").notNull().default(0),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("xero_history_notes_pending_idx").on(t.writtenAt, t.createdAt)],
+);
+
+/** Every call to Xero's write path, without payloads. Pruned after 90 days. */
+export const xeroSyncLog = pgTable(
+  "xero_sync_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    entityType: text("entity_type").notNull(),
+    entityId: uuid("entity_id"),
+    action: text("action").notNull(),
+    httpStatus: integer("http_status"),
+    xeroId: text("xero_id"),
+    message: text("message"),
+    durationMs: integer("duration_ms"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("xero_sync_log_entity_idx").on(t.entityId, t.createdAt),
+    index("xero_sync_log_created_idx").on(t.createdAt),
+  ],
+);
+
+/** Xero reference data for the pickers: accounts, tax rates, branding themes. */
+export const xeroCache = pgTable("xero_cache", {
+  key: text("key").primaryKey(),
+  data: jsonb("data").$type<unknown>().notNull(),
+  fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 /* ───────────────────────── relations ───────────────────────── */
@@ -1029,3 +1413,11 @@ export type CustomerGrant = typeof customerGrants.$inferSelect;
 export type SharepointGrant = typeof sharepointGrants.$inferSelect;
 export type PlannerPlanLink = typeof plannerPlans.$inferSelect;
 export type PlannerItem = typeof plannerItems.$inferSelect;
+export type Item = typeof items.$inferSelect;
+export type Document = typeof documents.$inferSelect;
+export type DocumentLine = typeof documentLines.$inferSelect;
+export type DocumentType = (typeof documentTypeEnum.enumValues)[number];
+export type DocumentStatus = (typeof documentStatusEnum.enumValues)[number];
+export type RowType = (typeof rowTypeEnum.enumValues)[number];
+export type AmountsAre = (typeof amountsAreEnum.enumValues)[number];
+export type XeroSyncState = (typeof xeroSyncStateEnum.enumValues)[number];

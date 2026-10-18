@@ -3,14 +3,14 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Menu, X } from "lucide-react";
-import { Nav } from "./nav";
+import { Nav, type NavCounts } from "./nav";
 import { AnkordLogo } from "@/components/brand/logo";
 
 export function MobileNav({
   counts,
   restricted,
 }: {
-  counts?: { due?: number };
+  counts?: NavCounts;
   restricted?: boolean;
 }) {
   // `open` can only become true from a click, so the portal is never reached

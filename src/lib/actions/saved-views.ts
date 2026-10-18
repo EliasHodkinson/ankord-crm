@@ -9,7 +9,29 @@ import { requireUser } from "@/lib/auth/session";
 import { AccessDenied, getAccess } from "@/lib/access";
 import { fail, fromZod, type ActionState } from "./shared";
 
-const ENTITIES = ["leads", "customers", "projects", "contacts"] as const;
+const ENTITIES = [
+  "leads",
+  "customers",
+  "projects",
+  "contacts",
+  "quotes",
+  "sales_orders",
+  "invoices",
+  "purchase_orders",
+  "receipts",
+  "bills",
+] as const;
+
+/** The list page each entity's views belong to. */
+const LIST_PATH: Record<string, string> = {
+  quotes: "/sales/quotes",
+  sales_orders: "/sales/orders",
+  invoices: "/sales/invoices",
+  purchase_orders: "/purchasing/orders",
+  receipts: "/purchasing/receipts",
+  bills: "/purchasing/bills",
+};
+const listPath = (entity: string) => LIST_PATH[entity] ?? `/${entity}`;
 
 const viewSchema = z.object({
   entity: z.enum(ENTITIES),
@@ -52,7 +74,7 @@ export async function saveView(
     position: next,
   });
 
-  revalidatePath(`/${parsed.data.entity}`);
+  revalidatePath(listPath(parsed.data.entity));
   return { ok: true, message: "View saved." };
 }
 
@@ -70,6 +92,6 @@ export async function deleteView(id: string): Promise<ActionState> {
   }
 
   await db.delete(savedViews).where(and(eq(savedViews.id, id)));
-  revalidatePath(`/${view.entity}`);
+  revalidatePath(listPath(view.entity));
   return { ok: true };
 }
