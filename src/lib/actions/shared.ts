@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { activity, customers, leads, projects } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth/session";
+import { currentPrincipal } from "@/lib/auth/principal";
 
 /** The shape every server action returns, so forms can render errors uniformly. */
 export type ActionState = {
@@ -86,9 +87,17 @@ export async function logActivity(entry: {
   meta?: Record<string, unknown>;
 }) {
   const { user } = await requireUser();
+  // A change made through an MCP client (Claude) is still that person's, and
+  // says where it came from.
+  const principal = currentPrincipal();
+  if (principal) principal.activityLogged += 1;
   await getDb()
     .insert(activity)
-    .values({ ...entry, actorId: user.id });
+    .values({
+      ...entry,
+      meta: principal ? { ...entry.meta, via: principal.via, client: principal.client } : entry.meta,
+      actorId: user.id,
+    });
 }
 
 /**

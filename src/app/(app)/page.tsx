@@ -538,6 +538,12 @@ export default async function DashboardPage() {
                       <span className="text-[var(--text-muted)]">
                         {entry.summary}
                       </span>
+                      {entry.meta?.via === "mcp" ? (
+                        <span className="text-[var(--text-faint)]">
+                          {" "}
+                          · via {String(entry.meta.client ?? "Claude")}
+                        </span>
+                      ) : null}
                     </p>
                     <span className="shrink-0 text-[11px] text-[var(--text-faint)]">
                       {relativeTime(entry.createdAt)}

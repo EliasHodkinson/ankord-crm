@@ -61,6 +61,13 @@ before touching anything visual.
 - A Neon branch copied from production carries production's Xero tokens, and
   Xero refresh tokens are single-use. Delete `xero_connection` on a test branch
   before running against it.
+- The MCP server (`/mcp`, `lib/mcp`) runs tools *as* the connected person:
+  `actAs()` makes `getSession()` find their MCP session instead of a cookie,
+  so tools call the ordinary reads and actions and inherit every access check.
+  Never give a tool its own query that skips `lib/access.ts`, and never
+  service-account it. A new write tool goes through `write()` in
+  `lib/mcp/run.ts` so it lands in the activity log marked `via: "mcp"`; one
+  that reaches Xero or SharePoint says so and is marked `openWorldHint`.
 - Charts use the `--chart-*` tokens. The dark ramp is a chosen set of steps, not
   a flip of the light one — see DESIGN.md.
 

@@ -154,9 +154,64 @@ export const sessions = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    /**
+     * `web` is a browser, found by the session cookie. `mcp` is an MCP client
+     * (Claude) the person connected, found by a bearer token — see lib/mcp.
+     * Both carry the person's own Microsoft tokens, so deleting the row
+     * revokes Graph access with it either way.
+     */
+    kind: text("kind").$type<"web" | "mcp">().notNull().default("web"),
+    /** The OAuth client an MCP session was approved for. Null until approved. */
+    oauthClientId: uuid("oauth_client_id").references(() => oauthClients.id, {
+      onDelete: "cascade",
+    }),
+    /** SHA-256 of the MCP refresh token currently issued. Rotated on every use. */
+    refreshHash: text("refresh_hash"),
   },
-  (t) => [index("sessions_user_idx").on(t.userId)],
+  (t) => [
+    index("sessions_user_idx").on(t.userId),
+    uniqueIndex("sessions_refresh_hash_idx").on(t.refreshHash),
+  ],
 );
+
+/**
+ * An MCP client that has asked to connect: registered dynamically (RFC 7591)
+ * or identified by a client metadata document URL. Registering grants
+ * nothing — each person still signs in with Microsoft and approves it, and
+ * what it may do is what that person may do.
+ */
+export const oauthClients = pgTable(
+  "oauth_clients",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** What the client sends as `client_id`: a random id, or its metadata URL. */
+    clientId: text("client_id").notNull(),
+    kind: text("kind").$type<"dcr" | "cimd">().notNull(),
+    name: text("name").notNull(),
+    clientUri: text("client_uri"),
+    redirectUris: text("redirect_uris").array().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    /** When a metadata document was last fetched. */
+    refreshedAt: timestamp("refreshed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("oauth_clients_client_id_idx").on(t.clientId)],
+);
+
+/** A one-time authorization code, kept only as a hash, for a few minutes. */
+export const oauthCodes = pgTable("oauth_codes", {
+  codeHash: text("code_hash").primaryKey(),
+  oauthClientId: uuid("oauth_client_id")
+    .notNull()
+    .references(() => oauthClients.id, { onDelete: "cascade" }),
+  sessionId: uuid("session_id")
+    .notNull()
+    .references(() => sessions.id, { onDelete: "cascade" }),
+  redirectUri: text("redirect_uri").notNull(),
+  codeChallenge: text("code_challenge").notNull(),
+  resource: text("resource").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  usedAt: timestamp("used_at", { withTimezone: true }),
+});
 
 /* ───────────────────────── customers & people ───────────────────────── */
 
