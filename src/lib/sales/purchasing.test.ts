@@ -164,6 +164,7 @@ test("tracking links are built from the carrier, or taken as typed for Other", (
   assert.equal(trackingUrl("auspost", "33 AB 1234"), "https://auspost.com.au/mypost/track/details/33AB1234");
   assert.match(trackingUrl("startrack", "ABC123") ?? "", /startrack\.com\.au.*ABC123$/);
   assert.match(trackingUrl("tnt", "123") ?? "", /tnt\.com.*cons=123$/);
+  assert.equal(trackingUrl("4px", "00393580940188828697"), "https://track.4px.com/#/result/0/00393580940188828697");
   assert.equal(trackingUrl("auspost", ""), null);
   assert.equal(trackingUrl("other", "X1", "https://track.example.com/X1"), "https://track.example.com/X1");
   assert.equal(trackingUrl("other", "X1", "javascript:alert(1)"), null);

@@ -17,6 +17,7 @@ export type CarrierKey =
   | "dhl"
   | "toll"
   | "sendle"
+  | "4px"
   | "other";
 
 type Carrier = { label: string; url: ((number: string) => string) | null };
@@ -38,6 +39,8 @@ export const CARRIERS: Record<CarrierKey, Carrier> = {
   },
   toll: { label: "Toll", url: (n) => `https://www.mytoll.com/?externalSearchQuery=${enc(n)}` },
   sendle: { label: "Sendle", url: (n) => `https://track.sendle.com/tracking?ref=${enc(n)}` },
+  // International parcels from overseas suppliers.
+  "4px": { label: "4PX", url: (n) => `https://track.4px.com/#/result/0/${enc(n)}` },
   other: { label: "Other", url: null },
 };
 
