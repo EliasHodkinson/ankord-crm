@@ -13,6 +13,7 @@ import { refreshBriefIfPresent } from "./brief";
 import {
   fromZod,
   logActivity,
+  emptyToNull,
   optionalEmail,
   optionalText,
   optionalUrl,
@@ -24,6 +25,11 @@ import {
 const checkbox = z.preprocess(
   (v) => v === "on" || v === "true" || v === true,
   z.boolean(),
+);
+
+const optionalDays = z.preprocess(
+  emptyToNull,
+  z.coerce.number().int("Use whole days.").min(0, "Terms can't be negative.").max(365).nullable(),
 );
 
 const customerSchema = z.object({
@@ -50,6 +56,9 @@ const customerSchema = z.object({
   country: optionalText,
   tags: tagList,
   notes: optionalText,
+  // Blank means "use the default in Settings → Sales & Xero".
+  termsDays: optionalDays,
+  supplierTermsDays: optionalDays,
 });
 
 export async function createCustomer(

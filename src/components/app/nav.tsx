@@ -6,9 +6,13 @@ import {
   Building2,
   ChartNoAxesColumn,
   CircleCheck,
+  FileText,
   FolderKanban,
   Gauge,
   Mail,
+  Package,
+  ReceiptText,
+  Tags,
   Settings,
   Target,
   Upload,
@@ -32,6 +36,15 @@ const SECTIONS: { heading?: string; items: NavItem[] }[] = [
     ],
   },
   {
+    heading: "Sales",
+    items: [
+      { href: "/sales/quotes", label: "Quotes", icon: FileText },
+      { href: "/sales/orders", label: "Sales orders", icon: Package, badge: "toOrder" },
+      { href: "/sales/invoices", label: "Invoices", icon: ReceiptText, badge: "overdue" },
+      { href: "/sales/items", label: "Items", icon: Tags, staffOnly: true },
+    ],
+  },
+  {
     heading: "Delivery",
     items: [
       { href: "/projects", label: "Projects", icon: FolderKanban },
@@ -42,13 +55,16 @@ const SECTIONS: { heading?: string; items: NavItem[] }[] = [
   },
 ];
 
+/** Live numbers for the rail: follow-ups due, orders needing stock, invoices overdue. */
+export type NavCounts = { due?: number; toOrder?: number; overdue?: number };
+
 type NavItem = {
   href: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   exact?: boolean;
   /** Key into the counts the server passes in. */
-  badge?: "due";
+  badge?: keyof NavCounts;
   /** Hidden from restricted people. The server refuses them regardless. */
   staffOnly?: boolean;
 };
@@ -62,7 +78,7 @@ export function Nav({
   /** A restricted person is not offered the areas they cannot open. */
   restricted?: boolean;
   /** Live numbers for the rail, e.g. how many follow-ups are due. */
-  counts?: { due?: number };
+  counts?: NavCounts;
 }) {
   const pathname = usePathname();
 

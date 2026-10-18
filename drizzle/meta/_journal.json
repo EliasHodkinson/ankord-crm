@@ -99,6 +99,13 @@
       "when": 1792295557630,
       "tag": "0013_planner_sync",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1792297177278,
+      "tag": "0014_sales_foundation",
+      "breakpoints": true
     }
   ]
 }

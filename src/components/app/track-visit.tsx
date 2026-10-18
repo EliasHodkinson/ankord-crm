@@ -15,7 +15,7 @@ export function TrackVisit({
 }: {
   href: string;
   label: string;
-  kind: "customer" | "contact" | "lead" | "project";
+  kind: "customer" | "contact" | "lead" | "project" | "document";
 }) {
   useEffect(() => {
     rememberVisit({ href, label, kind });

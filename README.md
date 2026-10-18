@@ -24,6 +24,8 @@ files and email all run through the Ankor'd Microsoft 365 tenant.
 | **Bulk actions** | Select rows to reassign, re-stage or tag in one go |
 | **Runbook projects** | Numbered phases and steps with owners, warnings, checklists, key contacts and an account register |
 | **Microsoft Planner** | Each project can be kept in two-way sync with a Planner plan — create a plan from a project, a project from a plan, or link the two |
+| **Sales** | Quotes → sales orders → invoices, with partial quantities. Quotes and invoices are created in Xero as drafts and take Xero's number; they are sent from Xero. Sales orders stay here and show, per line, what still needs ordering |
+| **Items** | What Ankor'd sells and buys, with the Xero accounts and tax rates each line is coded to. Saved in Xero as untracked items |
 
 ---
 
@@ -116,6 +118,8 @@ Copy `.env.example` to `.env.local` and fill it in.
 | `AZURE_AD_CLIENT_SECRET` | The secret **value** |
 | `APP_ENCRYPTION_KEY` | 32 random bytes, base64 — `openssl rand -base64 32` |
 | `APP_URL` | This deployment's origin, no trailing slash |
+| `XERO_CLIENT_ID`, `XERO_CLIENT_SECRET` | Optional. The Xero app; unset switches Xero off |
+| `CRON_SECRET` | Optional. Guards `/api/cron/xero-sync`, which Vercel Cron calls every five minutes. Unset, the route refuses everyone |
 
 `APP_ENCRYPTION_KEY` encrypts the Microsoft refresh tokens held per session.
 Changing it signs everybody out; losing it is not recoverable, so keep a copy
@@ -234,6 +238,47 @@ Unlinking stops the sync and deletes nothing on either side.
 
 ---
 
+## 6a. Sales and Xero
+
+Design: [`docs/sales-erp-spec.md`](docs/sales-erp-spec.md). Phase A is built:
+items, quotes, sales orders and invoices. Purchasing (phase B) and reserve
+invoices, deliveries and payments (phase C) follow.
+
+**Xero owns the numbers and the sending.** Saving a quote or invoice creates it
+in Xero as a DRAFT and copies Xero's number back (QU-…, INV-…). Send it from
+Xero. Sales orders are The Gangway's own (SO-…, numbered in Settings → Sales &
+Xero); Xero sees them in the Reference of what is drawn from them and in
+history notes on the quote. Nothing about Xero being down, slow or
+disconnected stops a document saving or opening — it waits as "Draft · not in
+Xero yet" with Retry, and the cron picks it up.
+
+**Scopes.** Connecting Xero asks for `offline_access`, `accounting.contacts`,
+`accounting.invoices`, `accounting.settings.read`, `accounting.payments.read`
+and `accounting.reports.aged.read` (granular scopes, `src/lib/xero/config.ts`).
+A connection made before these shows **Reconnect Xero** in Settings, and
+pushes wait until it is done.
+
+**After connecting:** Settings → Sales & Xero → **Read accounts**, then choose
+the default sales and purchase accounts and tax rates. Items can override them.
+
+**Sync.** `vercel.json` schedules `/api/cron/xero-sync` every five minutes: it
+refreshes the account pickers daily, pulls status and payments for linked
+documents, and pushes anything waiting, serially and within Xero's rate limit.
+Vercel's Hobby plan only runs crons daily; on it, use **Sync now** in Settings
+or Refresh on a document.
+
+**Testing.** Use the Xero demo company, never the live organisation. A Neon
+branch made from production carries production's Xero tokens, and Xero refresh
+tokens are single-use: one refresh from the branch breaks production's
+connection. Delete the `xero_connection` row on any test branch before running
+the app against it, then connect the demo company there.
+
+```bash
+npm test    # totals, copy-to, line states and the Xero payload mapping
+```
+
+---
+
 ## 7. Deploying to Vercel
 
 1. Import the repository into Vercel.
@@ -348,11 +393,14 @@ src/
     brand/          the Ankor'd marks, drawn in currentColor
     ui/             buttons, cards, fields, tables, badges
     app/            navigation, timeline, runbook, files, account register
+      documents/    the one list, detail and editor every sales document uses
   lib/
     auth/           Entra OIDC, sessions, token encryption
     db/             Drizzle schema and client
     graph/          Microsoft Graph — mail, SharePoint, To Do and Planner
     planner/        the Planner mapping and two-way sync
+    sales/          document types, totals, copy-to, fulfilment (client-safe)
+    xero/           Xero auth, client, payload mapping, push engine and pull
     actions/        server actions (writes)
     data/           server queries (reads)
     templates/      project runbook templates

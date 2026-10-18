@@ -37,7 +37,9 @@ import { getSettings, listTeam } from "@/lib/data/common";
 import { listCustomerOptions } from "@/lib/data/customers";
 import { readFolder } from "@/lib/data/files";
 import { updateProject } from "@/lib/actions/projects";
-import { requireUser } from "@/lib/auth/session";
+import { canWriteSales, requireUser } from "@/lib/auth/session";
+import { DocumentSummary } from "@/components/app/documents/document-summary";
+import { documentsForProject } from "@/lib/data/documents";
 import { formatDate, money } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -85,6 +87,7 @@ export default async function ProjectPage({
 
   const progress = progressOf(project.steps);
   const plannerLink = await getPlannerLink(id);
+  const commercials = await documentsForProject(id);
 
   /** The dated views need the whole page width; the ordered list does not. */
   const wide = view !== "list";
@@ -296,6 +299,14 @@ export default async function ProjectPage({
         </div>
 
         <div className="flex flex-col gap-5">
+          <DocumentSummary
+            title="Commercials"
+            documents={commercials}
+            newHref={`partner=${project.customerId}`}
+            canWrite={canWriteSales(user.role)}
+            emptyText="Quotes, orders and invoices filed against this project appear here."
+          />
+
           <Card>
             <CardHeader title="Key contacts" meta="Who this depends on" />
             <CardBody>

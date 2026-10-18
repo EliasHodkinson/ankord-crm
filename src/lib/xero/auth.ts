@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db";
 import { xeroConnection } from "@/lib/db/schema";
 import { encryptSecret, decryptSecret } from "@/lib/auth/crypto";
 import {
+  missingXeroScopes,
   XERO_CONNECTIONS_URL,
   XERO_SCOPE_STRING,
   XERO_TOKEN_URL,
@@ -41,7 +42,27 @@ type TokenResponse = {
   refresh_token: string;
   expires_in: number;
   token_type: string;
+  scope?: string;
 };
+
+/**
+ * The scopes a token carries. Xero's token response usually says; the access
+ * token is a JWT whose `scope` claim always does, so it is the fallback. The
+ * claim is only read, never trusted for anything but this display and the
+ * "reconnect to allow writing" prompt — Xero enforces the real thing.
+ */
+function grantedScope(tokens: TokenResponse): string | null {
+  if (tokens.scope) return tokens.scope;
+  try {
+    const payload = JSON.parse(
+      Buffer.from(tokens.access_token.split(".")[1] ?? "", "base64url").toString("utf8"),
+    ) as { scope?: string | string[] };
+    if (Array.isArray(payload.scope)) return payload.scope.join(" ");
+    return payload.scope ?? null;
+  } catch {
+    return null;
+  }
+}
 
 function credentials(): { id: string; secret: string } {
   const id = process.env.XERO_CLIENT_ID;
@@ -97,6 +118,7 @@ async function storeTokens(
     refreshTokenEnc: await encryptSecret(tokens.refresh_token),
     refreshedAt: new Date(),
     updatedAt: new Date(),
+    ...(grantedScope(tokens) ? { scope: grantedScope(tokens) } : {}),
     ...(extra.tenantId ? { tenantId: extra.tenantId } : {}),
     ...(extra.tenantName ? { tenantName: extra.tenantName } : {}),
     ...(extra.connectedById
@@ -197,6 +219,7 @@ export async function readXeroConnection() {
       tenantId: xeroConnection.tenantId,
       connectedAt: xeroConnection.connectedAt,
       refreshedAt: xeroConnection.refreshedAt,
+      scope: xeroConnection.scope,
       connected: xeroConnection.refreshTokenEnc,
     })
     .from(xeroConnection)
@@ -209,6 +232,8 @@ export async function readXeroConnection() {
     tenantId: row.tenantId,
     connectedAt: row.connectedAt,
     refreshedAt: row.refreshedAt,
+    /** Write scopes this grant lacks — non-empty means "reconnect to create documents". */
+    missingScopes: missingXeroScopes(row.scope),
   };
 }
 

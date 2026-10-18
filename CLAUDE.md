@@ -52,11 +52,20 @@ before touching anything visual.
   `queuePlannerSync(projectId)` (`lib/planner/push.ts`), or the edit only
   reaches a linked Planner plan on the next poll. Comparisons against the sync
   base go through `sameValue()` — the base is jsonb, which reorders keys.
+- Sales documents (`docs/sales-erp-spec.md`): line counters (`qtyConverted`,
+  `qtyInvoiced`, …) are **derived**. A write that adds, changes or cancels a
+  linked line calls `recomputeCounters(tx, baseLineIds)` in the same
+  transaction (`actions/documents-core.ts`, server-only, not `"use server"`).
+  Multi-row writes use `withTransaction`; Xero is called only after the commit,
+  through `lib/xero/queue.ts`. Never send a document number to Xero.
+- A Neon branch copied from production carries production's Xero tokens, and
+  Xero refresh tokens are single-use. Delete `xero_connection` on a test branch
+  before running against it.
 - Charts use the `--chart-*` tokens. The dark ramp is a chosen set of steps, not
   a flip of the light one — see DESIGN.md.
 
 ## Checks
 
 ```bash
-npx tsc --noEmit && npx eslint . && npm run build
+npx tsc --noEmit && npx eslint . && npm test && npm run build
 ```

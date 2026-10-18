@@ -179,6 +179,34 @@ export async function requireAdmin(): Promise<SessionContext> {
   return session;
 }
 
+/** Thrown by requireMember for a person who may look but not change anything. */
+export class ReadOnlyError extends Error {
+  constructor(message = "You can view this, but not change it.") {
+    super(message);
+    this.name = "ReadOnlyError";
+  }
+}
+
+/**
+ * For writes to sales documents, items and stock: admins and staff only.
+ * Viewers and restricted people read; they never write (spec Q9).
+ *
+ * Throws rather than redirecting, so a server action can turn it into an
+ * ordinary failure message.
+ */
+export async function requireMember(): Promise<SessionContext> {
+  const session = await requireUser();
+  if (session.user.role !== "admin" && session.user.role !== "member") {
+    throw new ReadOnlyError();
+  }
+  return session;
+}
+
+/** Whether this person may write sales documents — for hiding buttons only. */
+export function canWriteSales(role: string): boolean {
+  return role === "admin" || role === "member";
+}
+
 /* ── Microsoft Graph access tokens ───────────────────────────────── */
 
 export class GraphAuthError extends Error {

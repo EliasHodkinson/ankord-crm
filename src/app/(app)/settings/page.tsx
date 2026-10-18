@@ -9,6 +9,11 @@ import { XeroPanel } from "./xero-panel";
 import { TeamsPanel } from "./teams-panel";
 import { SharedMailboxesForm } from "./shared-mailboxes-form";
 import { PlannerSettings } from "./planner-panel";
+import { SalesSettings } from "./sales-settings";
+import { readXeroRefs } from "@/lib/data/xero-cache";
+import { xeroProblemCount } from "@/lib/data/documents";
+import { numberSeries } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 import { listPlannerLinks } from "@/lib/data/planner";
 import { getDb } from "@/lib/db";
 import { users } from "@/lib/db/schema";
@@ -74,6 +79,13 @@ export default async function SettingsPage({
   // Only an admin can see the picker, so only an admin pays for this call.
   const libraries = isAdmin ? await readLibraries(settings?.spSiteId ?? null) : [];
   const plannerLinks = isAdmin ? await listPlannerLinks() : [];
+  const [xeroRefs, xeroProblems, [soSeries]] = isAdmin
+    ? await Promise.all([
+        readXeroRefs(),
+        xeroProblemCount(),
+        getDb().select().from(numberSeries).where(eq(numberSeries.key, "sales_order")),
+      ])
+    : [null, 0, []];
 
   return (
     <>
@@ -244,7 +256,7 @@ export default async function SettingsPage({
         <Card>
           <CardHeader
             title="Xero"
-            meta="Account balances and invoice history against customers and suppliers"
+            meta="Quotes and invoices are created and numbered in Xero; balances show against business partners"
           />
           <CardBody>
             {isAdmin ? (
@@ -262,6 +274,27 @@ export default async function SettingsPage({
             )}
           </CardBody>
         </Card>
+
+        {isAdmin && xeroRefs ? (
+          <Card id="sales">
+            <CardHeader
+              title="Sales & Xero"
+              meta="Default accounts, tax rates, terms and numbering for quotes, orders and invoices"
+            />
+            <CardBody>
+              <SalesSettings
+                settings={settings}
+                accounts={xeroRefs.accounts}
+                taxRates={xeroRefs.taxRates}
+                themes={xeroRefs.themes}
+                refsFetchedAt={xeroRefs.fetchedAt}
+                soSeries={{ prefix: soSeries?.prefix ?? "SO-", nextValue: soSeries?.nextValue ?? 1 }}
+                problems={xeroProblems}
+                connected={Boolean(xeroConnection && xeroConnection.missingScopes.length === 0)}
+              />
+            </CardBody>
+          </Card>
+        ) : null}
 
         <Card>
           <CardHeader

@@ -13,6 +13,7 @@ export type XeroState = {
   tenantId: string | null;
   connectedAt: Date | null;
   refreshedAt: Date | null;
+  missingScopes: string[];
 } | null;
 
 /**
@@ -89,9 +90,25 @@ export function XeroPanel({
               </dd>
             </div>
           </dl>
+          {connection.missingScopes.length ? (
+            <div className="flex flex-col gap-2 rounded-lg border border-[var(--warn)]/30 bg-[var(--warn-bg)] px-3 py-2.5">
+              <p className="flex items-start gap-2 text-[12px] leading-5 text-[var(--warn)]">
+                <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                Reconnect Xero to let The Gangway create documents. Until then quotes and
+                invoices save here but wait to go to Xero.
+              </p>
+              <div>
+                <ButtonLink href="/api/xero/connect" variant="primary" size="sm">
+                  <Link2 />
+                  Reconnect Xero
+                </ButtonLink>
+              </div>
+            </div>
+          ) : null}
           <p className="text-[11px] leading-4 text-[var(--text-faint)]">
-            Xero access is read-only — the CRM never writes an invoice or edits a
-            contact. The link lapses if it goes 60 days without being used.
+            The Gangway creates quotes, invoices and items in Xero as drafts and reads
+            their status and payments back. It never records a payment or edits an
+            existing contact. The link lapses if it goes 60 days without being used.
           </p>
           <div className="flex items-center gap-2">
             <Button
