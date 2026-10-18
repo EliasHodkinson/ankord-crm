@@ -60,6 +60,35 @@ export const COMM_TYPE: Record<string, Entry> = {
   teams: { label: "Teams", tone: "info" },
 };
 
+/** "member" is shown as Staff — the ordinary Ankor'd employee, who sees the whole book. */
+export const USER_ROLE: Record<string, Entry> = {
+  admin: { label: "Admin", tone: "brand" },
+  member: { label: "Staff", tone: "neutral" },
+  viewer: { label: "Viewer", tone: "neutral" },
+  restricted: { label: "Restricted", tone: "accent" },
+};
+
+export const USER_ROLE_HINT: Record<string, string> = {
+  admin: "Everything, including settings, people and access",
+  member: "Every record — create and edit",
+  viewer: "Every record, read only",
+  restricted: "Only the business partners granted to them",
+};
+
+/** What the CRM has done in SharePoint for one person on one folder. */
+export const FOLDER_GRANT_STATUS: Record<string, Entry> = {
+  applied: { label: "Shared", tone: "ok" },
+  preexisting: { label: "Already had access", tone: "info" },
+  failed: { label: "Not shared", tone: "danger" },
+  revoked: { label: "Removed", tone: "muted" },
+  revoke_failed: { label: "Removal failed", tone: "danger" },
+};
+
+export const FILE_ACCESS: Record<string, Entry> = {
+  write: { label: "Can edit files", tone: "neutral" },
+  read: { label: "Can view files", tone: "neutral" },
+};
+
 export function StatusBadge({
   map,
   value,

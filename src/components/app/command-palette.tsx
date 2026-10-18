@@ -33,6 +33,8 @@ type Item = {
   icon: React.ComponentType<{ className?: string }>;
   run: () => void;
   keywords?: string;
+  /** Not offered to restricted people. The server refuses them regardless. */
+  staffOnly?: boolean;
 };
 
 const KIND_ICON = {
@@ -73,7 +75,7 @@ function readRecent(): Recent[] {
  * anything, switch the theme. The fastest path through the CRM for anyone who
  * would rather not reach for the mouse.
  */
-export function CommandPalette() {
+export function CommandPalette({ restricted = false }: { restricted?: boolean }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -177,6 +179,7 @@ export function CommandPalette() {
       icon: Target,
       run: () => go("/leads"),
       keywords: "pipeline board",
+      staffOnly: true,
     },
     {
       id: "n-customers",
@@ -210,6 +213,7 @@ export function CommandPalette() {
       icon: Upload,
       run: () => go("/import"),
       keywords: "csv spreadsheet migrate bulk",
+      staffOnly: true,
     },
     {
       id: "n-reports",
@@ -218,6 +222,7 @@ export function CommandPalette() {
       icon: Columns3,
       run: () => go("/reports"),
       keywords: "analytics charts pipeline",
+      staffOnly: true,
     },
   ];
 
@@ -229,6 +234,7 @@ export function CommandPalette() {
       icon: Plus,
       run: () => go("/leads/new"),
       keywords: "add opportunity",
+      staffOnly: true,
     },
     {
       id: "c-customer",
@@ -237,6 +243,7 @@ export function CommandPalette() {
       icon: Plus,
       run: () => go("/customers/new"),
       keywords: "add client account",
+      staffOnly: true,
     },
     {
       id: "c-project",
@@ -271,9 +278,12 @@ export function CommandPalette() {
       group: "Settings",
       icon: Settings,
       run: () => go("/settings"),
+      staffOnly: true,
       keywords: "sharepoint team permissions",
     },
   ];
+
+  const allowed = (item: Item) => !(restricted && item.staffOnly);
 
   const matches = (item: Item) =>
     !term ||
@@ -293,10 +303,13 @@ export function CommandPalette() {
             go(hit.href);
           },
         })),
-        ...[...navigation, ...creates, ...settings].filter(matches),
+        ...[...navigation, ...creates, ...settings].filter(allowed).filter(matches),
       ]
     : [
-        ...recent.map((r) => ({
+        // Recents live in this browser, not this account, so on a shared
+        // machine they can name records from someone else's session. A
+        // restricted person is not shown them.
+        ...(restricted ? [] : recent).map((r) => ({
           id: `r-${r.href}`,
           label: r.label,
           hint: "Recently opened",
@@ -304,9 +317,9 @@ export function CommandPalette() {
           icon: KIND_ICON[r.kind] ?? Clock,
           run: () => go(r.href),
         })),
-        ...creates,
-        ...navigation,
-        ...settings,
+        ...creates.filter(allowed),
+        ...navigation.filter(allowed),
+        ...settings.filter(allowed),
       ];
 
   useEffect(() => {

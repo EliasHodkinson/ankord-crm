@@ -1,10 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/lib/db";
-import { settings, users } from "@/lib/db/schema";
+import { settings } from "@/lib/db/schema";
 import { requireAdmin } from "@/lib/auth/session";
 import { disconnectXero } from "@/lib/xero/auth";
 import {
@@ -73,55 +72,37 @@ export async function saveLibrary(
   return { ok: true, message: "SharePoint library saved." };
 }
 
-const roleSchema = z.enum(["admin", "member", "viewer"]);
+const mailboxList = z.preprocess(
+  (v) =>
+    typeof v === "string"
+      ? [...new Set(v.split(/[\s,;]+/).map((a) => a.trim().toLowerCase()).filter(Boolean))]
+      : [],
+  z.array(z.email("One of those is not an email address.")).max(30),
+);
 
-export async function setUserRole(userId: string, role: string): Promise<ActionState> {
+/**
+ * The shared mailboxes Link email offers, one address per line. Listing one
+ * grants nothing: Exchange decides, person by person, who can open it.
+ */
+export async function saveSharedMailboxes(
+  _prev: ActionState | undefined,
+  formData: FormData,
+): Promise<ActionState> {
   const { user } = await requireAdmin();
-  const parsed = roleSchema.safeParse(role);
-  if (!parsed.success) return fail("Unknown role.");
-
-  if (userId === user.id && parsed.data !== "admin") {
-    return fail("You can't remove your own admin access — ask another admin to do it.");
-  }
-
-  const db = getDb();
-
-  // Entra wins where it is in play. Writing here would be silently reverted at
-  // the person's next sign-in, so refuse and say where the real switch is.
-  const [target] = await db
-    .select({ roleSource: users.roleSource })
-    .from(users)
-    .where(eq(users.id, userId))
-    .limit(1);
-
-  if (target?.roleSource === "entra") {
-    return fail(
-      "This person's access is managed in Entra. Change their app role assignment there — a change made here would be overwritten at their next sign-in.",
-    );
-  }
-
-  await db
-    .update(users)
-    .set({ role: parsed.data, updatedAt: new Date() })
-    .where(eq(users.id, userId));
-
-  revalidatePath("/settings");
-  return { ok: true, message: "Role updated." };
-}
-
-export async function setUserActive(userId: string, isActive: boolean): Promise<ActionState> {
-  const { user } = await requireAdmin();
-  if (userId === user.id && !isActive) {
-    return fail("You can't switch off your own access.");
-  }
+  const parsed = mailboxList.safeParse(formData.get("sharedMailboxes"));
+  if (!parsed.success) return fromZod(parsed.error);
 
   await getDb()
-    .update(users)
-    .set({ isActive, updatedAt: new Date() })
-    .where(eq(users.id, userId));
+    .insert(settings)
+    .values({ id: "singleton", sharedMailboxes: parsed.data, updatedById: user.id })
+    .onConflictDoUpdate({
+      target: settings.id,
+      set: { sharedMailboxes: parsed.data, updatedById: user.id, updatedAt: new Date() },
+    });
 
   revalidatePath("/settings");
-  return { ok: true };
+  revalidatePath("/inbox");
+  return { ok: true, message: "Shared mailboxes saved." };
 }
 
 /** Drops the Xero connection. Admin-only, like connecting it. */

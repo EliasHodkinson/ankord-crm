@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { asc } from "drizzle-orm";
 import { Mail, Megaphone } from "lucide-react";
 import { PageBody, PageHeader } from "@/components/app/page-header";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -33,10 +32,9 @@ import { ProjectForm } from "../project-form";
 import { getProject, progressOf } from "@/lib/data/projects";
 import { listCommunications } from "@/lib/data/communications";
 import { getSettings, listTeam } from "@/lib/data/common";
+import { listCustomerOptions } from "@/lib/data/customers";
 import { readFolder } from "@/lib/data/files";
 import { updateProject } from "@/lib/actions/projects";
-import { getDb } from "@/lib/db";
-import { customers } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth/session";
 import { formatDate, money } from "@/lib/utils";
 
@@ -80,10 +78,7 @@ export default async function ProjectPage({
     listTeam(),
     getSettings(),
     readFolder(project.spDriveId, project.spItemId),
-    getDb()
-      .select({ id: customers.id, name: customers.name })
-      .from(customers)
-      .orderBy(asc(customers.name)),
+    listCustomerOptions(),
   ]);
 
   const progress = progressOf(project.steps);

@@ -29,6 +29,7 @@ import { getThresholds, listTeam } from "@/lib/data/common";
 import { listSavedViews } from "@/lib/data/saved-views";
 import { heatOf, heatSummary } from "@/lib/staleness";
 import { requireUser } from "@/lib/auth/session";
+import { customerScope, getAccess } from "@/lib/access";
 
 export const metadata: Metadata = { title: "Business Partners" };
 export const dynamic = "force-dynamic";
@@ -39,10 +40,13 @@ export default async function CustomersPage({
   searchParams: Promise<{ status?: string; kind?: string; q?: string }>;
 }) {
   const { user } = await requireUser();
+  const access = await getAccess();
   const { status, kind, q } = await searchParams;
   const db = getDb();
 
   const filters: SQL[] = [];
+  const scope = customerScope(access, customers.id);
+  if (scope) filters.push(scope);
   if (status && status !== "all") {
     filters.push(eq(customers.status, status as "active"));
   }
@@ -94,10 +98,12 @@ export default async function CustomersPage({
           </p>
         }
         actions={
-          <ButtonLink href="/customers/new" variant="primary">
-            <Plus />
-            Create Business Partner
-          </ButtonLink>
+          access.restricted ? null : (
+            <ButtonLink href="/customers/new" variant="primary">
+              <Plus />
+              Create Business Partner
+            </ButtonLink>
+          )
         }
       />
 
@@ -139,24 +145,32 @@ export default async function CustomersPage({
           <div className="rounded-[10px] border border-[var(--border)] bg-[var(--surface)]">
             <EmptyState
               title={
-                q || status || kind ? "Nothing matches that" : "No business partners yet"
+                q || status || kind
+                  ? "Nothing matches that"
+                  : access.restricted
+                    ? "Nothing has been shared with you yet"
+                    : "No business partners yet"
               }
               description={
                 q || status || kind
                   ? "Try a different relationship or status, or clear the search."
-                  : "Add a business Ankor'd deals with — a customer, a supplier, a media contact. You can also convert a won lead, which brings its contact and history across."
+                  : access.restricted
+                    ? "An Ankor'd admin decides which business partners you can see. Once they share one, it appears here."
+                    : "Add a business Ankor'd deals with — a customer, a supplier, a media contact. You can also convert a won lead, which brings its contact and history across."
               }
               action={
-                <ButtonLink href="/customers/new" variant="primary">
-                  <Plus />
-                  Create Business Partner
-                </ButtonLink>
+                access.restricted ? undefined : (
+                  <ButtonLink href="/customers/new" variant="primary">
+                    <Plus />
+                    Create Business Partner
+                  </ButtonLink>
+                )
               }
             />
           </div>
         ) : (
           <Selection>
-            <BulkBar entity="customers" team={team} />
+            {access.restricted ? null : <BulkBar entity="customers" team={team} />}
             <TableShell>
               <Table>
                 <thead>

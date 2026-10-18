@@ -6,6 +6,7 @@ import { z } from "zod";
 import { getDb } from "@/lib/db";
 import { contactFacts, contacts } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth/session";
+import { assertContact, assertContactFact, assertCustomer } from "@/lib/access";
 import {
   emptyToNull,
   fail,
@@ -60,6 +61,7 @@ export async function createContact(
   const { user } = await requireUser();
   const parsed = contactSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return fromZod(parsed.error);
+  await assertCustomer(parsed.data.customerId);
 
   if (parsed.data.isPrimary) await demoteOtherPrimaries(parsed.data.customerId);
 
@@ -89,6 +91,9 @@ export async function updateContact(
   await requireUser();
   const parsed = contactSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return fromZod(parsed.error);
+  // Both ends: the person as they are, and the partner they are being saved to.
+  await assertContact(id);
+  await assertCustomer(parsed.data.customerId);
 
   if (parsed.data.isPrimary) await demoteOtherPrimaries(parsed.data.customerId, id);
 
@@ -112,6 +117,7 @@ export async function updateContact(
 
 export async function deleteContact(id: string, customerId: string): Promise<void> {
   await requireUser();
+  await assertContact(id);
   await getDb().delete(contacts).where(eq(contacts.id, id));
   revalidatePath(`/customers/${customerId}`);
   revalidatePath("/contacts");
@@ -142,6 +148,7 @@ export async function addContactFact(
   if (!parsed.success) return fromZod(parsed.error);
 
   const { customerId, ...values } = parsed.data;
+  await assertContact(values.contactId);
   await getDb()
     .insert(contactFacts)
     .values({ ...values, createdById: user.id });
@@ -155,6 +162,7 @@ export async function deleteContactFact(
   customerId: string,
 ): Promise<ActionState> {
   await requireUser();
+  await assertContactFact(id);
   const db = getDb();
   const [row] = await db
     .select({ id: contactFacts.id })

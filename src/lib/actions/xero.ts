@@ -6,6 +6,7 @@ import { z } from "zod";
 import { getDb } from "@/lib/db";
 import { customers } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth/session";
+import { assertStaff } from "@/lib/access";
 import { searchXeroContacts, XeroApiError } from "@/lib/xero/client";
 import { XeroAuthError } from "@/lib/xero/auth";
 import { fail, logActivity, type ActionState } from "./shared";
@@ -28,11 +29,17 @@ export type XeroSearchResult = {
   takenBy: string | null;
 };
 
+/*
+ * Xero is staff-only. A search returns every contact in the Xero organisation,
+ * which would show a restricted person the whole client list.
+ */
+
 /** Searches Xero, flagging anything already spoken for. */
 export async function searchXeroForLink(
   term: string,
 ): Promise<{ ok: true; results: XeroSearchResult[] } | { ok: false; message: string }> {
   await requireUser();
+  await assertStaff();
 
   try {
     const found = await searchXeroContacts(term);
@@ -64,6 +71,7 @@ export async function linkXeroContact(
   xeroName: string,
 ): Promise<ActionState> {
   await requireUser();
+  await assertStaff();
 
   const parsed = z.uuid().safeParse(xeroContactId);
   if (!parsed.success) return fail("That does not look like a Xero contact.");
@@ -101,6 +109,7 @@ export async function linkXeroContact(
 
 export async function unlinkXeroContact(customerId: string): Promise<ActionState> {
   await requireUser();
+  await assertStaff();
 
   await getDb()
     .update(customers)

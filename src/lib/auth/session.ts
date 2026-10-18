@@ -9,7 +9,9 @@ import { sessions, users, type User } from "@/lib/db/schema";
 import { cookieSecret, decryptSecret, encryptSecret } from "./crypto";
 import {
   EntraTokenError,
+  grantedScopeSets,
   issuer,
+  scopeStringFor,
   jwksUrl,
   refreshTokens,
   type TokenSet,
@@ -55,6 +57,8 @@ export type EntraClaims = JWTPayload & {
    * entirely until app roles are configured in Entra — see lib/roles.ts.
    */
   roles?: string[];
+  /** Present when the person signed in through another identity provider — a guest. */
+  idp?: string;
 };
 
 export async function verifyIdToken(idToken: string): Promise<EntraClaims> {
@@ -157,6 +161,18 @@ export async function requireUser(): Promise<SessionContext> {
   return session;
 }
 
+/** The scopes Microsoft granted this session, for features that need more than sign-in. */
+export async function sessionScopes(): Promise<string | null> {
+  const sid = await readCookie();
+  if (!sid) return null;
+  const [row] = await getDb()
+    .select({ scope: sessions.scope })
+    .from(sessions)
+    .where(eq(sessions.id, sid))
+    .limit(1);
+  return row?.scope ?? null;
+}
+
 export async function requireAdmin(): Promise<SessionContext> {
   const session = await requireUser();
   if (session.user.role !== "admin") redirect("/?denied=admin");
@@ -198,7 +214,11 @@ export async function getGraphToken(): Promise<string> {
 
   let tokens: TokenSet;
   try {
-    tokens = await refreshTokens(await decryptSecret(row.refreshTokenEnc));
+    // Keep whatever optional scopes this session was granted across a refresh.
+    tokens = await refreshTokens(
+      await decryptSecret(row.refreshTokenEnc),
+      scopeStringFor(grantedScopeSets(row.scope)),
+    );
   } catch (error) {
     if (error instanceof EntraTokenError) {
       throw new GraphAuthError(

@@ -4,11 +4,14 @@ import { LeadForm } from "../lead-form";
 import { createLead } from "@/lib/actions/leads";
 import { listTeam } from "@/lib/data/common";
 import { requireUser } from "@/lib/auth/session";
+import { requireStaffPage } from "@/lib/access";
 
 export const metadata: Metadata = { title: "New lead" };
 
 export default async function NewLeadPage() {
   await requireUser();
+  // Staff only — a restricted person has no way in, not just no link.
+  await requireStaffPage();
   const team = await listTeam();
 
   return (

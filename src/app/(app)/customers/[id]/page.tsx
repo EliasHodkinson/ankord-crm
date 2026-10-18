@@ -36,6 +36,7 @@ import { readXeroSnapshot } from "@/lib/data/xero";
 import { readXeroConnection } from "@/lib/xero/auth";
 import { updateCustomer } from "@/lib/actions/customers";
 import { requireUser } from "@/lib/auth/session";
+import { getAccess } from "@/lib/access";
 import { kindBadges } from "@/lib/contact-kinds";
 import { formatDate } from "@/lib/utils";
 
@@ -59,16 +60,20 @@ export default async function CustomerPage({
   const { user } = await requireUser();
   const { id } = await params;
 
+  // Null for a partner this person may not see, so it is a plain 404.
   const customer = await getCustomer(id);
   if (!customer) notFound();
+  // Xero is staff-only: balances and invoices are not part of what a partner
+  // grant shares, and the link picker searches every Xero contact.
+  const { restricted } = await getAccess();
 
   const [entries, team, settings, folder, xero, xeroConn] = await Promise.all([
     listCommunications({ customerId: id }),
     listTeam(),
     getSettings(),
     readFolder(customer.spDriveId, customer.spItemId),
-    readXeroSnapshot(customer.xeroContactId),
-    readXeroConnection().catch(() => null),
+    restricted ? readXeroSnapshot(null) : readXeroSnapshot(customer.xeroContactId),
+    restricted ? null : readXeroConnection().catch(() => null),
   ]);
   const xeroLive = Boolean(xeroConn);
 
@@ -156,7 +161,7 @@ export default async function CustomerPage({
             { id: "people", label: "People", count: customer.contacts.length },
             { id: "history", label: "History", count: entries.length },
             { id: "accounts", label: "Accounts", count: customer.accounts.length },
-            { id: "xero", label: "Xero" },
+            ...(restricted ? [] : [{ id: "xero", label: "Xero" }]),
             { id: "details", label: "Details" },
             { id: "files", label: "Files" },
           ]}
@@ -295,29 +300,31 @@ export default async function CustomerPage({
             </CardBody>
           </Card>
 
-          <Card id="xero" className="scroll-mt-20">
-            <CardHeader
-              title="Xero"
-              meta={
-                customer.xeroContactId
-                  ? "Balances and invoice history, read live from Xero"
-                  : "Not linked to a Xero contact yet"
-              }
-            />
-            <CardBody>
-              <XeroAccount
-                customerId={customer.id}
-                isCustomer={customer.isCustomer}
-                isSupplier={customer.isSupplier}
-                linkedName={xero.contact?.name ?? (customer.xeroContactId ? "Xero contact" : null)}
-                balances={xero.contact?.balances ?? null}
-                invoices={xero.invoices}
-                error={xero.error}
-                needsReconnect={xero.needsReconnect}
-                connected={xeroLive}
+          {restricted ? null : (
+            <Card id="xero" className="scroll-mt-20">
+              <CardHeader
+                title="Xero"
+                meta={
+                  customer.xeroContactId
+                    ? "Balances and invoice history, read live from Xero"
+                    : "Not linked to a Xero contact yet"
+                }
               />
-            </CardBody>
-          </Card>
+              <CardBody>
+                <XeroAccount
+                  customerId={customer.id}
+                  isCustomer={customer.isCustomer}
+                  isSupplier={customer.isSupplier}
+                  linkedName={xero.contact?.name ?? (customer.xeroContactId ? "Xero contact" : null)}
+                  balances={xero.contact?.balances ?? null}
+                  invoices={xero.invoices}
+                  error={xero.error}
+                  needsReconnect={xero.needsReconnect}
+                  connected={xeroLive}
+                />
+              </CardBody>
+            </Card>
+          )}
 
           <Card id="details" className="scroll-mt-20">
             <CardHeader title="Business partner details" />

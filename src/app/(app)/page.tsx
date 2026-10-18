@@ -29,6 +29,7 @@ import {
   users,
 } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth/session";
+import { customerScope, getAccess, linkedScope } from "@/lib/access";
 import {
   daysAway,
   daysUntilAnniversary,
@@ -47,7 +48,13 @@ const inDays = (n: number) => isoDate(n);
 
 export default async function DashboardPage() {
   const { user } = await requireUser();
+  const access = await getAccess();
+  const restricted = access.restricted;
   const db = getDb();
+  // Everything below is scoped to what this person may see. For staff these
+  // are all undefined, and the queries are exactly what they were.
+  const byProjectCustomer = customerScope(access, projects.customerId);
+  const byContactCustomer = customerScope(access, contacts.customerId);
 
   const [
     pipeline,
@@ -59,31 +66,39 @@ export default async function DashboardPage() {
     recent,
     counts,
   ] = await Promise.all([
-    db
-      .select({
-        count: sql<number>`count(*)::int`,
-        value: sql<number>`coalesce(sum(${leads.valueAud}), 0)::float`,
-      })
-      .from(leads)
-      .where(sql`${leads.stage} not in ('won','lost')`),
+    // Leads are staff-only, so a restricted person's pipeline is not queried.
+    restricted
+      ? Promise.resolve([{ count: 0, value: 0 }])
+      : db
+          .select({
+            count: sql<number>`count(*)::int`,
+            value: sql<number>`coalesce(sum(${leads.valueAud}), 0)::float`,
+          })
+          .from(leads)
+          .where(sql`${leads.stage} not in ('won','lost')`),
 
     db
       .select({ count: sql<number>`count(*)::int` })
       .from(projects)
-      .where(eq(projects.status, "active")),
+      .where(and(eq(projects.status, "active"), byProjectCustomer)),
 
-    db
-      .select({ lead: leads })
-      .from(leads)
-      .where(
-        and(
-          eq(leads.ownerId, user.id),
-          sql`${leads.stage} not in ('won','lost')`,
-          or(isNull(leads.nextActionAt), lte(leads.nextActionAt, inDays(7)))!,
-        ),
-      )
-      .orderBy(sql`${leads.nextActionAt} nulls last`)
-      .limit(6),
+    restricted
+      ? Promise.resolve([] as { lead: typeof leads.$inferSelect }[])
+      : db
+          .select({ lead: leads })
+          .from(leads)
+          .where(
+            and(
+              eq(leads.ownerId, user.id),
+              sql`${leads.stage} not in ('won','lost')`,
+              or(
+                isNull(leads.nextActionAt),
+                lte(leads.nextActionAt, inDays(7)),
+              )!,
+            ),
+          )
+          .orderBy(sql`${leads.nextActionAt} nulls last`)
+          .limit(6),
 
     db
       .select({
@@ -94,7 +109,13 @@ export default async function DashboardPage() {
       .from(projectSteps)
       .innerJoin(projects, eq(projects.id, projectSteps.projectId))
       .innerJoin(customers, eq(customers.id, projects.customerId))
-      .where(and(eq(projectSteps.status, "blocked"), ne(projects.status, "cancelled")))
+      .where(
+        and(
+          eq(projectSteps.status, "blocked"),
+          ne(projects.status, "cancelled"),
+          byProjectCustomer,
+        ),
+      )
       .orderBy(projectSteps.blockedSince)
       .limit(8),
 
@@ -109,6 +130,7 @@ export default async function DashboardPage() {
         and(
           eq(projectSteps.assigneeId, user.id),
           sql`${projectSteps.status} in ('todo','in_progress')`,
+          byProjectCustomer,
         ),
       )
       .orderBy(sql`${projectSteps.dueDate} nulls last`)
@@ -126,7 +148,7 @@ export default async function DashboardPage() {
       })
       .from(contacts)
       .innerJoin(customers, eq(customers.id, contacts.customerId))
-      .where(sql`${contacts.birthday} is not null`)
+      .where(and(sql`${contacts.birthday} is not null`, byContactCustomer))
       .limit(60),
 
     db
@@ -137,14 +159,26 @@ export default async function DashboardPage() {
       })
       .from(activity)
       .leftJoin(users, eq(users.id, activity.actorId))
+      // A restricted person sees the trail on their own partners only — not
+      // settings changes, imports, or anything on a lead.
+      .where(
+        linkedScope(access, {
+          customerId: activity.customerId,
+          projectId: activity.projectId,
+        }),
+      )
       .orderBy(desc(activity.createdAt))
       .limit(10),
 
     db
-      .select({
-        customers: sql<number>`(select count(*)::int from ${customers} where ${customers.status} = 'active')`,
-      })
-      .from(sql`(select 1) as one`),
+      .select({ customers: sql<number>`count(*)::int` })
+      .from(customers)
+      .where(
+        and(
+          eq(customers.status, "active"),
+          customerScope(access, customers.id),
+        ),
+      ),
   ]);
 
   const thresholds = await getThresholds();
@@ -166,8 +200,12 @@ export default async function DashboardPage() {
         sql`${contactFacts.onDate} is not null`,
         or(
           eq(contactFacts.recurring, true),
-          and(gte(contactFacts.onDate, today()), lte(contactFacts.onDate, inDays(45))),
+          and(
+            gte(contactFacts.onDate, today()),
+            lte(contactFacts.onDate, inDays(45)),
+          ),
         )!,
+        byContactCustomer,
       ),
     )
     .limit(40);
@@ -209,9 +247,11 @@ export default async function DashboardPage() {
         description={todayLongDate()}
         actions={
           <>
-            <ButtonLink href="/leads/new" variant="secondary">
-              New lead
-            </ButtonLink>
+            {restricted ? null : (
+              <ButtonLink href="/leads/new" variant="secondary">
+                New lead
+              </ButtonLink>
+            )}
             <ButtonLink href="/projects/new" variant="primary">
               New project
             </ButtonLink>
@@ -220,14 +260,22 @@ export default async function DashboardPage() {
       />
 
       <PageBody className="flex flex-col gap-5">
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <Stat
-            href="/leads"
-            icon={Target}
-            label="Open pipeline"
-            value={money(pipeline[0]?.value ?? 0)}
-            detail={`${pipeline[0]?.count ?? 0} leads in play`}
-          />
+        <div
+          className={
+            restricted
+              ? "grid gap-3 sm:grid-cols-3"
+              : "grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
+          }
+        >
+          {restricted ? null : (
+            <Stat
+              href="/leads"
+              icon={Target}
+              label="Open pipeline"
+              value={money(pipeline[0]?.value ?? 0)}
+              detail={`${pipeline[0]?.count ?? 0} leads in play`}
+            />
+          )}
           <Stat
             href="/projects"
             icon={FolderKanban}
@@ -240,7 +288,9 @@ export default async function DashboardPage() {
             icon={OctagonAlert}
             label="Blocked steps"
             value={String(blockedSteps.length)}
-            detail={blockedSteps.length > 0 ? "Waiting on someone" : "Nothing stuck"}
+            detail={
+              blockedSteps.length > 0 ? "Waiting on someone" : "Nothing stuck"
+            }
             urgent={blockedSteps.length > 0}
           />
           <Stat
@@ -253,76 +303,85 @@ export default async function DashboardPage() {
         </div>
 
         <div className="grid gap-5 lg:grid-cols-2">
-          <Card>
-            <CardHeader
-              title="Your leads"
-              meta="Yours to chase, soonest first"
-              action={
-                <Link
-                  href="/leads"
-                  className="inline-flex items-center gap-1 text-[12px] font-medium text-[var(--color-coastal-600)] hover:underline underline-offset-2"
-                >
-                  All leads
-                  <ArrowRight className="size-3" />
-                </Link>
-              }
-            />
-            {myLeads.length === 0 ? (
-              <EmptyState
-                compact
-                title="Nothing waiting on you"
-                description="Leads you own with an action due in the next week show up here."
+          {restricted ? null : (
+            <Card>
+              <CardHeader
+                title="Your leads"
+                meta="Yours to chase, soonest first"
+                action={
+                  <Link
+                    href="/leads"
+                    className="inline-flex items-center gap-1 text-[12px] font-medium text-[var(--color-coastal-600)] hover:underline underline-offset-2"
+                  >
+                    All leads
+                    <ArrowRight className="size-3" />
+                  </Link>
+                }
               />
-            ) : (
-              <ul className="divide-y divide-[var(--border-soft)]">
-                {myLeads.map(({ lead }) => {
-                  const overdue = lead.nextActionAt && lead.nextActionAt < today();
-                  const { heat, days } = heatOf(
-                    lead.lastActivityAt,
-                    lead.createdAt,
-                    thresholds.lead,
-                  );
-                  return (
-                    <li key={lead.id}>
-                      <Link
-                        href={`/leads/${lead.id}`}
-                        className="flex items-start gap-3 px-4 py-2.5 transition-colors hover:bg-[var(--surface-2)]"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-[13px] font-medium text-[var(--text)]">
-                            {lead.companyName}
-                          </p>
-                          <p className="truncate text-[12px] text-[var(--text-muted)]">
-                            {lead.nextAction ?? "No next action set"}
-                          </p>
-                        </div>
-                        <div className="flex shrink-0 flex-col items-end gap-1">
-                          {heat === "fresh" ? (
-                            <StatusBadge map={LEAD_STAGES} value={lead.stage} />
-                          ) : (
-                            <Badge tone={heat === "cold" ? "danger" : "warn"} dot>
-                              {heatSummary(heat, days)}
-                            </Badge>
-                          )}
-                          {lead.nextActionAt ? (
-                            <span
-                              className={
-                                overdue
-                                  ? "text-[11px] font-medium text-[var(--danger)]"
-                                  : "text-[11px] text-[var(--text-faint)]"
-                              }
-                            >
-                              {formatDate(lead.nextActionAt)}
-                            </span>
-                          ) : null}
-                        </div>
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </Card>
+              {myLeads.length === 0 ? (
+                <EmptyState
+                  compact
+                  title="Nothing waiting on you"
+                  description="Leads you own with an action due in the next week show up here."
+                />
+              ) : (
+                <ul className="divide-y divide-[var(--border-soft)]">
+                  {myLeads.map(({ lead }) => {
+                    const overdue =
+                      lead.nextActionAt && lead.nextActionAt < today();
+                    const { heat, days } = heatOf(
+                      lead.lastActivityAt,
+                      lead.createdAt,
+                      thresholds.lead,
+                    );
+                    return (
+                      <li key={lead.id}>
+                        <Link
+                          href={`/leads/${lead.id}`}
+                          className="flex items-start gap-3 px-4 py-2.5 transition-colors hover:bg-[var(--surface-2)]"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-[13px] font-medium text-[var(--text)]">
+                              {lead.companyName}
+                            </p>
+                            <p className="truncate text-[12px] text-[var(--text-muted)]">
+                              {lead.nextAction ?? "No next action set"}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 flex-col items-end gap-1">
+                            {heat === "fresh" ? (
+                              <StatusBadge
+                                map={LEAD_STAGES}
+                                value={lead.stage}
+                              />
+                            ) : (
+                              <Badge
+                                tone={heat === "cold" ? "danger" : "warn"}
+                                dot
+                              >
+                                {heatSummary(heat, days)}
+                              </Badge>
+                            )}
+                            {lead.nextActionAt ? (
+                              <span
+                                className={
+                                  overdue
+                                    ? "text-[11px] font-medium text-[var(--danger)]"
+                                    : "text-[11px] text-[var(--text-faint)]"
+                                }
+                              >
+                                {formatDate(lead.nextActionAt)}
+                              </span>
+                            ) : null}
+                          </div>
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </Card>
+          )}
 
           <Card>
             <CardHeader title="Blocked" meta="Steps waiting on someone else" />
@@ -347,7 +406,9 @@ export default async function DashboardPage() {
                         </p>
                         <p className="truncate text-[12px] text-[var(--text-muted)]">
                           {customerName} · {projectName}
-                          {step.blockedOn ? ` · waiting on ${step.blockedOn}` : ""}
+                          {step.blockedOn
+                            ? ` · waiting on ${step.blockedOn}`
+                            : ""}
                         </p>
                       </div>
                       {step.blockedSince ? (
@@ -363,7 +424,10 @@ export default async function DashboardPage() {
           </Card>
 
           <Card>
-            <CardHeader title="Assigned to you" meta="Runbook steps with your name on them" />
+            <CardHeader
+              title="Assigned to you"
+              meta="Runbook steps with your name on them"
+            />
             {myWork.length === 0 ? (
               <EmptyState
                 compact
@@ -445,7 +509,10 @@ export default async function DashboardPage() {
         </div>
 
         <Card>
-          <CardHeader title="Recent activity" meta="What the team has been doing" />
+          <CardHeader
+            title="Recent activity"
+            meta="What the team has been doing"
+          />
           {recent.length === 0 ? (
             <EmptyState
               compact
@@ -457,10 +524,18 @@ export default async function DashboardPage() {
               <ol className="flex flex-col gap-2.5">
                 {recent.map(({ entry, actorName, actorPhoto }) => (
                   <li key={entry.id} className="flex items-center gap-2.5">
-                    <Avatar name={actorName ?? "System"} src={actorPhoto} size="xs" />
+                    <Avatar
+                      name={actorName ?? "System"}
+                      src={actorPhoto}
+                      size="xs"
+                    />
                     <p className="min-w-0 flex-1 truncate text-[13px] text-[var(--text)]">
-                      <span className="font-medium">{actorName ?? "Someone"}</span>{" "}
-                      <span className="text-[var(--text-muted)]">{entry.summary}</span>
+                      <span className="font-medium">
+                        {actorName ?? "Someone"}
+                      </span>{" "}
+                      <span className="text-[var(--text-muted)]">
+                        {entry.summary}
+                      </span>
                     </p>
                     <span className="shrink-0 text-[11px] text-[var(--text-faint)]">
                       {relativeTime(entry.createdAt)}

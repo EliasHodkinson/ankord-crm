@@ -26,7 +26,7 @@ const SECTIONS: { heading?: string; items: NavItem[] }[] = [
   {
     heading: "Pipeline",
     items: [
-      { href: "/leads", label: "Leads", icon: Target },
+      { href: "/leads", label: "Leads", icon: Target, staffOnly: true },
       { href: "/customers", label: "Business Partners", icon: Building2 },
       { href: "/contacts", label: "People", icon: Users },
     ],
@@ -36,8 +36,8 @@ const SECTIONS: { heading?: string; items: NavItem[] }[] = [
     items: [
       { href: "/projects", label: "Projects", icon: FolderKanban },
       { href: "/inbox", label: "Link email", icon: Mail },
-      { href: "/reports", label: "Reports", icon: ChartNoAxesColumn },
-      { href: "/import", label: "Import", icon: Upload },
+      { href: "/reports", label: "Reports", icon: ChartNoAxesColumn, staffOnly: true },
+      { href: "/import", label: "Import", icon: Upload, staffOnly: true },
     ],
   },
 ];
@@ -49,13 +49,18 @@ type NavItem = {
   exact?: boolean;
   /** Key into the counts the server passes in. */
   badge?: "due";
+  /** Hidden from restricted people. The server refuses them regardless. */
+  staffOnly?: boolean;
 };
 
 export function Nav({
   onNavigate,
   counts,
+  restricted = false,
 }: {
   onNavigate?: () => void;
+  /** A restricted person is not offered the areas they cannot open. */
+  restricted?: boolean;
   /** Live numbers for the rail, e.g. how many follow-ups are due. */
   counts?: { due?: number };
 }) {
@@ -70,7 +75,7 @@ export function Nav({
               {section.heading}
             </p>
           ) : null}
-          {section.items.map((item) => (
+          {section.items.filter((item) => !(restricted && item.staffOnly)).map((item) => (
             <NavLink
               key={item.href}
               item={item}
@@ -84,13 +89,15 @@ export function Nav({
         </div>
       ))}
 
-      <div className="mt-auto flex flex-col gap-0.5 pt-4">
-        <NavLink
-          item={{ href: "/settings", label: "Settings", icon: Settings }}
-          active={pathname.startsWith("/settings")}
-          onNavigate={onNavigate}
-        />
-      </div>
+      {restricted ? null : (
+        <div className="mt-auto flex flex-col gap-0.5 pt-4">
+          <NavLink
+            item={{ href: "/settings", label: "Settings", icon: Settings }}
+            active={pathname.startsWith("/settings")}
+            onNavigate={onNavigate}
+          />
+        </div>
+      )}
     </nav>
   );
 }

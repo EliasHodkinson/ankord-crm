@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getGraphToken, getSession } from "@/lib/auth/session";
 import { createFolder } from "@/lib/graph/sharepoint";
 import { describeGraphFailure } from "@/lib/graph/errors";
+import { guardFolder } from "@/app/api/files/guard";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,9 @@ export async function POST(request: NextRequest) {
   if (!driveId || !itemId || !name?.trim()) {
     return NextResponse.json({ error: "A folder needs a name" }, { status: 400 });
   }
+
+  const denied = await guardFolder(driveId, itemId);
+  if (denied) return denied;
 
   try {
     const item = await createFolder(await getGraphToken(), driveId, itemId, name.trim());

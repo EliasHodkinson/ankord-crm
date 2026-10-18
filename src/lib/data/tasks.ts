@@ -3,6 +3,7 @@ import { and, asc, desc, eq, isNotNull, or, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { customers, leads, projects, tasks, users } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth/session";
+import { getAccess, taskScope } from "@/lib/access";
 import { isoDate } from "@/lib/utils";
 
 export { BUCKET_LABEL, BUCKET_ORDER, bucketOf, type TaskBucket } from "@/lib/tasks";
@@ -19,6 +20,7 @@ export async function listTasks(scope: {
   limit?: number;
 }) {
   const { user } = await requireUser();
+  const access = await getAccess();
   const where = [];
 
   if (scope.customerId) where.push(eq(tasks.customerId, scope.customerId));
@@ -30,6 +32,7 @@ export async function listTasks(scope: {
     where.length ? or(...where)! : undefined,
     assignee === "everyone" ? undefined : eq(tasks.assigneeId, assignee),
     scope.includeDone ? undefined : eq(tasks.status, "open"),
+    taskScope(access),
   ].filter(Boolean);
 
   return getDb()
@@ -58,6 +61,7 @@ export async function listTasks(scope: {
 
 /** How many open tasks are due today or already late — for the nav badge. */
 export async function dueCount(userId: string): Promise<number> {
+  const access = await getAccess();
   const [row] = await getDb()
     .select({ total: sql<number>`count(*)::int` })
     .from(tasks)
@@ -67,6 +71,7 @@ export async function dueCount(userId: string): Promise<number> {
         eq(tasks.status, "open"),
         isNotNull(tasks.dueDate),
         sql`${tasks.dueDate} <= ${isoDate()}`,
+        taskScope(access),
       ),
     );
   return row?.total ?? 0;

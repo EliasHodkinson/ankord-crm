@@ -1,11 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { count, eq, not, like, or } from "drizzle-orm";
-import { exchangeCode } from "@/lib/auth/entra";
+import { exchangeCode, isScopeSet, scopeStringFor } from "@/lib/auth/entra";
 import { createSession, verifyIdToken } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { fetchMyPhotoDataUri, fetchMyProfile } from "@/lib/graph/client";
-import { roleFromClaims } from "@/lib/roles";
+import { entraMayReplace, roleFromClaims } from "@/lib/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +34,9 @@ export async function GET(request: NextRequest) {
 
   let userId: string;
   try {
-    const tokens = await exchangeCode(code, verifier);
+    // The same scope sets the sign-in route asked for.
+    const sets = (request.cookies.get("ankord_scopes")?.value ?? "").split(",").filter(isScopeSet);
+    const tokens = await exchangeCode(code, verifier, scopeStringFor(sets));
     if (!tokens.id_token) return failure(request, "Microsoft did not return an identity token.");
 
     const claims = await verifyIdToken(tokens.id_token);
@@ -58,13 +60,22 @@ export async function GET(request: NextRequest) {
     // before the roles are configured in the tenant.
     const entraRole = roleFromClaims(claims.roles);
 
+    // A B2B guest — a VA, a contractor — is not Ankor'd staff. Graph says so
+    // directly; the id_token says so when the identity provider is not this
+    // tenant; and a guest's UPN carries #EXT#. Any one is enough.
+    const isGuest =
+      profile?.userType === "Guest" ||
+      Boolean(claims.idp && claims.idp !== claims.iss) ||
+      (profile?.userPrincipalName ?? "").includes("#EXT#");
+
     const [existing] = await db
-      .select({ id: users.id })
+      .select({ id: users.id, role: users.role, roleSource: users.roleSource })
       .from(users)
       .where(or(eq(users.azureOid, claims.oid), eq(users.email, email)))
       .limit(1);
 
     if (existing) {
+      const takeEntraRole = entraRole !== null && entraMayReplace(existing, entraRole);
       await db
         .update(users)
         .set({
@@ -74,7 +85,8 @@ export async function GET(request: NextRequest) {
           name,
           jobTitle: profile?.jobTitle ?? null,
           ...(photo ? { photo } : {}),
-          ...(entraRole ? { role: entraRole, roleSource: "entra" as const } : {}),
+          ...(takeEntraRole ? { role: entraRole, roleSource: "entra" as const } : {}),
+          ...(isGuest ? { isGuest: true } : {}),
           lastSeenAt: new Date(),
           updatedAt: new Date(),
         })
@@ -83,6 +95,12 @@ export async function GET(request: NextRequest) {
     } else {
       // The first person through the door administers the CRM. Accounts made
       // by scripts/dev-session.ts do not count — they carry a synthetic oid.
+      //
+      // Anyone else nobody added in Settings starts restricted with no grants,
+      // and sees an empty CRM until an admin decides otherwise. Having an
+      // account in the tenant — a VA's licensed mailbox account, a guest added
+      // for a Teams channel — is not a reason to see the book. Staff who hold
+      // an Entra app role get that role straight away, as before.
       const [{ total }] = await db
         .select({ total: count() })
         .from(users)
@@ -96,7 +114,8 @@ export async function GET(request: NextRequest) {
           name,
           jobTitle: profile?.jobTitle ?? null,
           photo,
-          role: entraRole ?? (total === 0 ? "admin" : "member"),
+          isGuest,
+          role: entraRole ?? (total === 0 && !isGuest ? "admin" : "restricted"),
           roleSource: entraRole ? "entra" : "manual",
           lastSeenAt: new Date(),
         })
@@ -115,5 +134,6 @@ export async function GET(request: NextRequest) {
   response.cookies.delete("ankord_pkce");
   response.cookies.delete("ankord_state");
   response.cookies.delete("ankord_next");
+  response.cookies.delete("ankord_scopes");
   return response;
 }

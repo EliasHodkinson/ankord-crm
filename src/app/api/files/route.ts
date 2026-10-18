@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getGraphToken, getSession } from "@/lib/auth/session";
 import { listChildren } from "@/lib/graph/sharepoint";
 import { describeGraphFailure } from "@/lib/graph/errors";
+import { guardFolder } from "@/app/api/files/guard";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,9 @@ export async function GET(request: NextRequest) {
   if (!driveId || !itemId) {
     return NextResponse.json({ error: "Missing folder reference" }, { status: 400 });
   }
+
+  const denied = await guardFolder(driveId, itemId);
+  if (denied) return denied;
 
   try {
     const items = await listChildren(await getGraphToken(), driveId, itemId);

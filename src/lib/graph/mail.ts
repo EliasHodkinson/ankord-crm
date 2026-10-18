@@ -27,6 +27,16 @@ export type GraphMessage = {
   body?: { contentType: "text" | "html"; content: string };
 };
 
+/**
+ * Whose mail. Null is the signed-in person's own mailbox; an address is a
+ * shared mailbox they have been given access to in Exchange, which needs the
+ * delegated Mail.Read.Shared scope.
+ */
+export type Mailbox = string | null;
+
+const root = (mailbox: Mailbox) =>
+  mailbox ? `/users/${encodeURIComponent(mailbox)}` : "/me";
+
 const LIST_SELECT =
   "$select=id,internetMessageId,conversationId,subject,bodyPreview,receivedDateTime,sentDateTime,hasAttachments,isDraft,webLink,from,sender,toRecipients,ccRecipients";
 
@@ -38,11 +48,12 @@ export function searchMessages(
   token: string,
   query: string,
   top = 40,
+  mailbox: Mailbox = null,
 ): Promise<GraphMessage[]> {
   const escaped = query.replace(/"/g, '\\"');
   return graphList<GraphMessage>(
     token,
-    `/me/messages?$search="${encodeURIComponent(escaped)}"&${LIST_SELECT}&$top=${top}`,
+    `${root(mailbox)}/messages?$search="${encodeURIComponent(escaped)}"&${LIST_SELECT}&$top=${top}`,
     top,
   );
 }
@@ -52,26 +63,35 @@ export function messagesWithAddresses(
   token: string,
   addresses: string[],
   top = 40,
+  mailbox: Mailbox = null,
 ): Promise<GraphMessage[]> {
   const clean = addresses.filter(Boolean).slice(0, 12);
   if (clean.length === 0) return Promise.resolve([]);
   // "from:a OR to:a" across every known address for the customer.
   const query = clean.map((a) => `participants:${a}`).join(" OR ");
-  return searchMessages(token, query, top);
+  return searchMessages(token, query, top, mailbox);
 }
 
-export function recentMessages(token: string, top = 40): Promise<GraphMessage[]> {
+export function recentMessages(
+  token: string,
+  top = 40,
+  mailbox: Mailbox = null,
+): Promise<GraphMessage[]> {
   return graphList<GraphMessage>(
     token,
-    `/me/messages?${LIST_SELECT}&$top=${top}&$orderby=receivedDateTime desc`,
+    `${root(mailbox)}/messages?${LIST_SELECT}&$top=${top}&$orderby=receivedDateTime desc`,
     top,
   );
 }
 
-export function getMessage(token: string, id: string): Promise<GraphMessage> {
+export function getMessage(
+  token: string,
+  id: string,
+  mailbox: Mailbox = null,
+): Promise<GraphMessage> {
   return graphFetch<GraphMessage>(
     token,
-    `/me/messages/${encodeURIComponent(id)}?${LIST_SELECT.replace(
+    `${root(mailbox)}/messages/${encodeURIComponent(id)}?${LIST_SELECT.replace(
       "$select=",
       "$select=body,",
     )}`,

@@ -111,12 +111,14 @@ export type GraphProfile = {
   jobTitle?: string;
   mobilePhone?: string;
   officeLocation?: string;
+  /** "Member" or "Guest" — a B2B guest is someone from outside Ankor'd. */
+  userType?: string;
 };
 
 export function fetchMyProfile(token: string): Promise<GraphProfile> {
   return graphFetch<GraphProfile>(
     token,
-    "/me?$select=id,displayName,givenName,surname,mail,userPrincipalName,jobTitle,mobilePhone,officeLocation",
+    "/me?$select=id,displayName,givenName,surname,mail,userPrincipalName,jobTitle,mobilePhone,officeLocation,userType",
   );
 }
 

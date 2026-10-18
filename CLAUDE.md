@@ -40,6 +40,14 @@ before touching anything visual.
   a toggle is not in the FormData at all.
 - "Activity" means a conversation, not an edit. `touchRecords()` sets
   `lastActivityAt`, and that is what going-cold is measured against.
+- **Every read and write is access-checked.** `lib/access.ts` decides what a
+  restricted person may see. A new list query takes a `customerScope` /
+  `linkedScope` / `taskScope` filter; a new action asserts the record it
+  touches (`assertCustomer`, `assertProject`, `assertLinks`…) or `assertStaff`.
+  A new staff-only page calls `requireStaffPage()`. Never trust a `projectId`
+  or `customerId` sent alongside a child id — look the parent up.
+- SharePoint permissions the CRM adds are recorded in `sharepoint_grants` and
+  only those are ever removed. Never delete a permission the ledger did not add.
 - Charts use the `--chart-*` tokens. The dark ramp is a chosen set of steps, not
   a flip of the light one — see DESIGN.md.
 

@@ -40,6 +40,11 @@ export function useRetainedValue(name: string): string | undefined {
   return React.useContext(FormContext).retained?.[name];
 }
 
+/** The result of the last submit, for forms that show more than "Saved." */
+export function useFormResult(): ActionState | undefined {
+  return React.useContext(FormContext).state;
+}
+
 /** Same, for checkboxes. */
 export function useRetainedChecked(name: string): boolean | undefined {
   const retained = React.useContext(FormContext).retained;

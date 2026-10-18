@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getGraphToken, getSession } from "@/lib/auth/session";
 import { uploadFile } from "@/lib/graph/sharepoint";
 import { describeGraphFailure } from "@/lib/graph/errors";
+import { guardFolder } from "@/app/api/files/guard";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -22,6 +23,9 @@ export async function POST(request: NextRequest) {
   if (files.length === 0) {
     return NextResponse.json({ error: "Nothing was attached" }, { status: 400 });
   }
+
+  const denied = await guardFolder(driveId, itemId);
+  if (denied) return denied;
 
   try {
     const token = await getGraphToken();

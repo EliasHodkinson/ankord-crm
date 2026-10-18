@@ -7,6 +7,7 @@ import { z } from "zod";
 import { getDb } from "@/lib/db";
 import { customers } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth/session";
+import { assertCustomer, assertStaff } from "@/lib/access";
 import { autoProvisionFolder } from "./files";
 import { refreshBriefIfPresent } from "./brief";
 import {
@@ -56,6 +57,9 @@ export async function createCustomer(
   formData: FormData,
 ): Promise<ActionState> {
   const { user } = await requireUser();
+  // A restricted person works inside the partners they were given; adding new
+  // ones is for staff.
+  await assertStaff();
   const parsed = customerSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return fromZod(parsed.error);
 
@@ -90,6 +94,7 @@ export async function updateCustomer(
   formData: FormData,
 ): Promise<ActionState> {
   await requireUser();
+  await assertCustomer(id);
   const parsed = customerSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return fromZod(parsed.error);
 
@@ -117,6 +122,7 @@ export async function updateCustomer(
 
 export async function archiveCustomer(id: string): Promise<void> {
   await requireUser();
+  await assertStaff();
   await getDb()
     .update(customers)
     .set({ status: "former", archivedAt: new Date(), updatedAt: new Date() })

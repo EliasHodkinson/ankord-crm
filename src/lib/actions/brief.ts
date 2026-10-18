@@ -5,6 +5,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { communications, customers, tasks, users } from "@/lib/db/schema";
 import { getGraphToken, requireUser } from "@/lib/auth/session";
+import { assertCustomer } from "@/lib/access";
 import { getCustomer } from "@/lib/data/customers";
 import { ensureChildFolders, writeTextFile } from "@/lib/graph/sharepoint";
 import { describeGraphFailure } from "@/lib/graph/errors";
@@ -24,6 +25,7 @@ import { fail, type ActionState } from "./shared";
  */
 export async function writeCustomerBrief(customerId: string): Promise<ActionState> {
   await requireUser();
+  await assertCustomer(customerId);
 
   const customer = await getCustomer(customerId);
   if (!customer) return fail("That business partner no longer exists.");

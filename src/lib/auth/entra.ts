@@ -24,6 +24,55 @@ export const GRAPH_SCOPES = [
 
 export const SCOPE_STRING = GRAPH_SCOPES.join(" ");
 
+/**
+ * Scopes asked for only when someone chooses a feature that needs them, never
+ * at an ordinary sign-in — so nobody is prompted for what they will not use,
+ * and the app still signs in before an administrator has consented to them.
+ * A session keeps every set it has been granted across refreshes.
+ *
+ * - `access` — `User.Invite.All`, for an admin inviting a VA or contractor as a
+ *   B2B guest. Bounded by the admin's own directory role: they also need to be
+ *   allowed to invite guests (Guest Inviter, User Administrator, or the tenant
+ *   letting members invite). Sharing customer folders needs nothing new —
+ *   driveItem invite and permission delete are covered by Sites.ReadWrite.All,
+ *   bounded by the admin's own rights on the site.
+ * - `shared-mail` — `Mail.Read.Shared`, for linking email from a shared
+ *   mailbox. Bounded by Exchange: only mailboxes the person can already open
+ *   in Outlook.
+ */
+export const OPTIONAL_SCOPES = {
+  access: ["User.Invite.All"],
+  "shared-mail": ["Mail.Read.Shared"],
+} as const satisfies Record<string, readonly string[]>;
+
+export type ScopeSet = keyof typeof OPTIONAL_SCOPES;
+
+export const isScopeSet = (value: unknown): value is ScopeSet =>
+  typeof value === "string" && value in OPTIONAL_SCOPES;
+
+/** Graph may report scopes bare or as full URIs; compare them bare. */
+const bare = (scope: string) => scope.replace(/^https:\/\/graph\.microsoft\.com\//i, "").toLowerCase();
+
+/** The optional sets a granted scope string covers. */
+export function grantedScopeSets(scope: string | null | undefined): ScopeSet[] {
+  const granted = new Set((scope ?? "").split(/\s+/).filter(Boolean).map(bare));
+  return (Object.keys(OPTIONAL_SCOPES) as ScopeSet[]).filter((set) =>
+    OPTIONAL_SCOPES[set].every((s) => granted.has(bare(s))),
+  );
+}
+
+export const hasScopeSet = (scope: string | null | undefined, set: ScopeSet) =>
+  grantedScopeSets(scope).includes(set);
+
+/** Whether a granted scope list includes the people-management scopes. */
+export const hasAccessAdminScopes = (scope: string | null | undefined) =>
+  hasScopeSet(scope, "access");
+
+/** The ordinary scopes plus the given optional sets. */
+export function scopeStringFor(sets: readonly ScopeSet[]): string {
+  return [...GRAPH_SCOPES, ...sets.flatMap((set) => OPTIONAL_SCOPES[set])].join(" ");
+}
+
 const authority = () =>
   `https://login.microsoftonline.com/${requireEnv("AZURE_AD_TENANT_ID")}`;
 
@@ -48,13 +97,14 @@ export function buildAuthorizeUrl(opts: {
   codeChallenge: string;
   loginHint?: string;
   prompt?: "login" | "select_account" | "consent";
+  scope?: string;
 }): string {
   const params = new URLSearchParams({
     client_id: requireEnv("AZURE_AD_CLIENT_ID"),
     response_type: "code",
     redirect_uri: redirectUri(),
     response_mode: "query",
-    scope: SCOPE_STRING,
+    scope: opts.scope ?? SCOPE_STRING,
     state: opts.state,
     code_challenge: opts.codeChallenge,
     code_challenge_method: "S256",
@@ -99,24 +149,31 @@ export class EntraTokenError extends Error {
   }
 }
 
-export function exchangeCode(code: string, codeVerifier: string): Promise<TokenSet> {
+export function exchangeCode(
+  code: string,
+  codeVerifier: string,
+  scope: string = SCOPE_STRING,
+): Promise<TokenSet> {
   return postToken(
     new URLSearchParams({
       grant_type: "authorization_code",
       code,
       redirect_uri: redirectUri(),
       code_verifier: codeVerifier,
-      scope: SCOPE_STRING,
+      scope,
     }),
   );
 }
 
-export function refreshTokens(refreshToken: string): Promise<TokenSet> {
+export function refreshTokens(
+  refreshToken: string,
+  scope: string = SCOPE_STRING,
+): Promise<TokenSet> {
   return postToken(
     new URLSearchParams({
       grant_type: "refresh_token",
       refresh_token: refreshToken,
-      scope: SCOPE_STRING,
+      scope,
     }),
   );
 }

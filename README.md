@@ -57,11 +57,30 @@ rotating.
 | `User.Read` | The signed-in person's name, title and photo |
 | `User.ReadBasic.All` | Showing colleagues in owner and assignee pickers |
 | `Mail.Read` | Reading the signed-in person's mailbox to link messages |
-| `Sites.ReadWrite.All` | Reading and writing the client files in SharePoint |
+| `Sites.ReadWrite.All` | Reading and writing the client files in SharePoint, and sharing a client folder with a restricted person |
+| `Tasks.ReadWrite` | Mirroring follow-ups into the signed-in person's Microsoft To Do |
+| `User.Invite.All` | **Admins only, asked for on demand** — inviting a VA or contractor as a B2B guest. See [People and access](#7-people-and-access) |
+| `Mail.Read.Shared` | **Asked for on demand** — linking email from a shared mailbox the person can already open in Outlook |
 
 Everything is **delegated**, so the CRM only ever sees what the signed-in
 person can already see. There is no application permission and no service
 account. `Mail.Send` is deliberately not requested — the CRM never sends mail.
+
+`User.Invite.All` and `Mail.Read.Shared` are not part of an ordinary sign-in.
+Each is requested only when someone first needs it — **Allow inviting guests**
+in Settings → People and access, **Allow shared mailboxes** on Link email — so
+nobody is prompted for what they will not use, and sign-in keeps working before
+they have been consented. Grant admin consent for both along with the others.
+
+### Shared mailboxes
+
+List the shared mailboxes people link email from in **Settings → Shared
+mailboxes** (Graph cannot list the mailboxes a person can open, so they are
+named once). Link email then offers a mailbox picker. Listing a mailbox grants
+nothing: Exchange decides, person by person, who can read it — the VA reads
+Kee's and Annemaree's mailboxes because their account has that access in
+Exchange, not because of the CRM. Where the email is filed is still limited to
+the business partners that person can see.
 
 > Want tighter file scoping? `Sites.Selected` restricts app access to named
 > sites, but it is application-only. Delegated `Sites.ReadWrite.All` keeps
@@ -129,8 +148,9 @@ npm run dev
 ```
 
 Then sign in at <http://localhost:3000> with an Ankor'd account. The first
-person to sign in becomes an admin; everyone after that starts as a member and
-can be promoted in **Settings**.
+person to sign in becomes an admin. After that, anyone who signs in without an
+Entra app role, and without having been added in **Settings → People and
+access**, starts Restricted and sees nothing until an admin sets their role.
 
 Working on the UI before the app registration exists:
 
@@ -169,6 +189,91 @@ database only stores the drive and item ids needed to find the folder again.
 Preview deployments get their URL from `VERCEL_URL` automatically, but each
 preview origin still needs its redirect URI registered before sign-in works
 there — it is usually simpler to test against the production URL.
+
+---
+
+## 7. People and access
+
+Everyone who signs in is one of four roles:
+
+| Role | Sees |
+|---|---|
+| **Admin** | Everything, including Settings and People and access |
+| **Staff** (`member`) | Every record — create and edit |
+| **Viewer** | Every record |
+| **Restricted** | Only the business partners granted to them, and what hangs off each one: its people, projects, communications, follow-ups, account register and SharePoint folder. No leads, reports, import, Xero, settings, or other partners — not in lists, search, the dashboard or the activity feed |
+
+Admins manage this in **Settings → People and access**: add a person, set their
+role, tick the business partners a restricted person may see, and suspend
+someone (which signs them out everywhere and takes back the folder access the
+CRM gave them). Enforcement is on the server, in `src/lib/access.ts` — every
+read, action, search and file route goes through it.
+
+### Bringing in a VA
+
+**If they already have an account in the tenant** — Ankor'd's VA works from
+`va@ankord.com.au`, a licensed member account with access to the shared
+mailboxes they handle — add that address in People and access, choose
+Restricted and tick their partners. The CRM finds the account and invites
+nobody. If they sign in first, they land Restricted with nothing granted; tick
+their partners then.
+
+If the VA is signed in with a licensed account, check what that account
+already reaches in SharePoint itself. If it is in the client site's Members or
+Visitors group, or the library is shared with "Everyone except external users",
+it can open every client folder in SharePoint whatever the CRM grants. The CRM
+only adds and removes direct permissions on the granted folders; it does not
+take away access given through the site.
+
+**If they have no account in the tenant**, they come in as an **Entra B2B
+guest**. Type their own email, leave **Invite as
+a guest** ticked, choose Restricted and their partners. The CRM invites them
+through Graph; Microsoft emails them (or untick that and send the link shown).
+They sign in with their own email and a one-time code or their own Microsoft
+account — no licence, no Ankor'd mailbox, and no password the CRM ever sees.
+The app stays single-tenant: a guest is a user in the Ankor'd directory.
+
+Anyone who signs in without having been added here, and without an Entra app
+role, starts **Restricted with nothing granted** — member or guest. Having an
+account in the tenant is not a reason to see the book.
+
+What a guest cannot use: **Link email** and **To Do sync** need a mailbox and
+To Do in the Ankor'd tenant, which a guest does not have. A licensed member
+account like `va@` has both, and can link from the shared mailboxes it already
+opens in Outlook.
+
+### What the inviting admin needs
+
+- **To invite guests** — `User.Invite.All` consented on the app registration,
+  and a directory role that allows inviting: Guest Inviter, User Administrator,
+  or the tenant's *External collaboration settings* letting members invite.
+- **To share folders** — Full Control (Site Owner) on the SharePoint site that
+  holds client work, or at least Manage Permissions on the client folders.
+  The CRM shares as you; if SharePoint says no, the failure is shown against the
+  person with a **Try again** once it is fixed.
+- **SharePoint external sharing** for that site set to at least *Existing
+  guests*, or guests cannot be given a folder at all.
+
+### How folder sharing works
+
+Granting a partner gives the person direct access to that partner's folder
+(`driveItem` invite, no email). SharePoint breaks inheritance on the folder as
+part of it — the parent's permissions are copied on first, so staff keep their
+access — and the project folders inside inherit the grant. Every permission the
+CRM adds is recorded in `sharepoint_grants`. Revoking removes exactly those and
+nothing else: if the person already had access before the CRM touched the
+folder, it is recorded as such and left in place on revoke.
+
+If a partner has no folder yet, the grant is applied when the folder is
+created. If the CRM's change fails, the row stays visible in Settings until it
+succeeds.
+
+### Entra app roles
+
+If app roles are assigned in Entra, they still set Admin, Staff and Viewer at
+sign-in. A restriction made in the CRM is sticky — an Entra claim never widens
+it — and restricting someone is always allowed here, even when Entra assigned
+their role. `CRM.Restricted` is also recognised as an app role.
 
 ---
 

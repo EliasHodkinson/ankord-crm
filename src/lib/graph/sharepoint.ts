@@ -332,3 +332,73 @@ export async function getSiteByUrl(token: string, input: string): Promise<SiteIn
     `/sites/${address}?$select=id,name,displayName,webUrl`,
   );
 }
+
+/* ── permissions ─────────────────────────────────────────────────── */
+
+export type DrivePermission = {
+  id: string;
+  roles: string[];
+  /** Set when the permission comes from a parent folder or the site. */
+  inheritedFrom?: { id?: string; path?: string };
+  grantedToV2?: { user?: { id?: string; email?: string; displayName?: string } };
+  grantedTo?: { user?: { id?: string; email?: string; displayName?: string } };
+  link?: { type?: string; scope?: string };
+};
+
+export function listPermissions(
+  token: string,
+  driveId: string,
+  itemId: string,
+): Promise<DrivePermission[]> {
+  return graphList<DrivePermission>(token, `/drives/${driveId}/items/${itemId}/permissions`, 500);
+}
+
+/**
+ * Gives one person direct access to an item.
+ *
+ * SharePoint breaks inheritance on the item as part of this — it copies the
+ * parent's permissions onto the item first, so everyone who could reach the
+ * folder before still can — and then adds the grant. That is why there is no
+ * separate "break inheritance" call: Graph v1.0 has none, and it is not needed.
+ *
+ * No email is sent; the CRM is how they reach the folder.
+ */
+export async function grantItemAccess(
+  token: string,
+  driveId: string,
+  itemId: string,
+  recipient: { objectId: string } | { email: string },
+  role: "read" | "write",
+): Promise<DrivePermission> {
+  const result = await graphFetch<{ value: DrivePermission[] }>(
+    token,
+    `/drives/${driveId}/items/${itemId}/invite`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        recipients: [recipient],
+        roles: [role],
+        requireSignIn: true,
+        sendInvitation: false,
+      }),
+    },
+  );
+  const permission = result?.value?.[0];
+  if (!permission?.id) {
+    throw new GraphError(502, "noPermissionReturned", "SharePoint did not return the new permission.");
+  }
+  return permission;
+}
+
+export function deletePermission(
+  token: string,
+  driveId: string,
+  itemId: string,
+  permissionId: string,
+): Promise<void> {
+  return graphFetch<void>(
+    token,
+    `/drives/${driveId}/items/${itemId}/permissions/${encodeURIComponent(permissionId)}`,
+    { method: "DELETE" },
+  );
+}

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { getDb } from "@/lib/db";
 import { customers, leads } from "@/lib/db/schema";
 import { requireUser } from "@/lib/auth/session";
+import { assertStaff } from "@/lib/access";
 import { comparableName } from "@/lib/csv";
 import type { ImportKind, ImportPreviewRow } from "@/lib/import-fields";
 import { fail, logActivity, type ActionState } from "./shared";
@@ -24,6 +25,7 @@ export async function previewImport(
   rows: Record<string, string>[],
 ): Promise<{ ok: true; rows: ImportPreviewRow[] } | { ok: false; message: string }> {
   await requireUser();
+  await assertStaff();
   const parsed = payloadSchema.safeParse({ kind, rows });
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0]?.message ?? "That file could not be read." };
@@ -78,6 +80,7 @@ export async function commitImport(
   rows: Record<string, string>[],
 ): Promise<ActionState & { created?: number }> {
   const { user } = await requireUser();
+  await assertStaff();
   const parsed = payloadSchema.safeParse({ kind, rows });
   if (!parsed.success) {
     return fail(parsed.error.issues[0]?.message ?? "That file could not be read.");

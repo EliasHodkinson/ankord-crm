@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { asc } from "drizzle-orm";
 import { PageBody, PageHeader } from "@/components/app/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ButtonLink } from "@/components/ui/button";
@@ -7,8 +6,8 @@ import { ProjectForm } from "../project-form";
 import { TemplatePicker } from "../template-picker";
 import { createProject } from "@/lib/actions/projects";
 import { listTeam } from "@/lib/data/common";
-import { getDb } from "@/lib/db";
-import { customers } from "@/lib/db/schema";
+import { listCustomerOptions } from "@/lib/data/customers";
+import { getAccess } from "@/lib/access";
 import { TEMPLATES, templateSize } from "@/lib/templates";
 import { requireUser } from "@/lib/auth/session";
 
@@ -23,12 +22,11 @@ export default async function NewProjectPage({
   await requireUser();
   const { customer } = await searchParams;
 
-  const [team, customerList] = await Promise.all([
+  // Only the partners this person may see can own the new project.
+  const [team, customerList, access] = await Promise.all([
     listTeam(),
-    getDb()
-      .select({ id: customers.id, name: customers.name })
-      .from(customers)
-      .orderBy(asc(customers.name)),
+    listCustomerOptions(),
+    getAccess(),
   ]);
 
   if (customerList.length === 0) {
@@ -40,15 +38,22 @@ export default async function NewProjectPage({
         />
         <PageBody>
           <div className="rounded-[10px] border border-[var(--border)] bg-[var(--surface)]">
-            <EmptyState
-              title="Add a business partner first"
-              description="Projects belong to a business partner, so there is always somewhere for the files, contacts and email history to live."
-              action={
-                <ButtonLink href="/customers/new" variant="primary">
-                  Add a customer
-                </ButtonLink>
-              }
-            />
+            {access.restricted ? (
+              <EmptyState
+                title="Nothing has been shared with you yet"
+                description="Projects belong to a business partner. Once an Ankor'd admin shares one with you, you can start projects for it here."
+              />
+            ) : (
+              <EmptyState
+                title="Add a business partner first"
+                description="Projects belong to a business partner, so there is always somewhere for the files, contacts and email history to live."
+                action={
+                  <ButtonLink href="/customers/new" variant="primary">
+                    Add a customer
+                  </ButtonLink>
+                }
+              />
+            )}
           </div>
         </PageBody>
       </>

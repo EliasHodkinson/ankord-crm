@@ -19,6 +19,7 @@ import { getThresholds } from "@/lib/data/common";
 import { heatOf, heatSummary } from "@/lib/staleness";
 import { daysBack, formatDate, money, monthsBack } from "@/lib/utils";
 import { requireUser } from "@/lib/auth/session";
+import { requireStaffPage } from "@/lib/access";
 import { LEAD_STAGES } from "@/components/ui/status";
 
 export const metadata: Metadata = { title: "Reports" };
@@ -32,6 +33,8 @@ const monthLabel = (key: string) =>
 
 export default async function ReportsPage() {
   await requireUser();
+  // Staff only — a restricted person has no way in, not just no link.
+  await requireStaffPage();
   const db = getDb();
 
   const sixMonthsAgo = monthsBack(5);
